@@ -2,6 +2,7 @@ import crypto from "node:crypto"
 import { cookies } from "next/headers"
 
 const COOKIE_NAME = "mp_session"
+const MERCHANT_COOKIE_NAME = "mp_merchant"
 const MAX_AGE_SECONDS = 60 * 60 * 24 * 30 // 30 days
 
 function secret(): string {
@@ -45,4 +46,28 @@ export async function getSessionUserId(): Promise<string | null> {
   const jar = await cookies()
   const raw = jar.get(COOKIE_NAME)?.value
   return raw ? unsign(raw) : null
+}
+
+// --- Merchant portal session (separate cookie from the Telegram customer one) ---
+
+export async function setMerchantSession(merchantId: string): Promise<void> {
+  const jar = await cookies()
+  jar.set(MERCHANT_COOKIE_NAME, sign(merchantId), {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: MAX_AGE_SECONDS,
+  })
+}
+
+export async function getMerchantSession(): Promise<string | null> {
+  const jar = await cookies()
+  const raw = jar.get(MERCHANT_COOKIE_NAME)?.value
+  return raw ? unsign(raw) : null
+}
+
+export async function clearMerchantSession(): Promise<void> {
+  const jar = await cookies()
+  jar.delete(MERCHANT_COOKIE_NAME)
 }

@@ -72,12 +72,27 @@ export const categories = pgTable("categories", {
 });
 
 // ---------------------------------------------------------------------------
+// Merchants (business accounts that own vendors — the /partner portal)
+// ---------------------------------------------------------------------------
+export const merchants = pgTable("merchants", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  email: text("email").notNull().unique(),
+  passwordHash: text("password_hash").notNull(),
+  name: text("name"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// ---------------------------------------------------------------------------
 // Vendors / partners
 // ---------------------------------------------------------------------------
 export const vendors = pgTable(
   "vendors",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    merchantId: uuid("merchant_id").references(() => merchants.id, {
+      onDelete: "cascade",
+    }),
     categoryId: uuid("category_id").references(() => categories.id),
     name: text("name").notNull(),
     description: text("description"),
@@ -285,7 +300,12 @@ export const categoriesRelations = relations(categories, ({ many }) => ({
   services: many(services),
 }));
 
+export const merchantsRelations = relations(merchants, ({ many }) => ({
+  vendors: many(vendors),
+}));
+
 export const vendorsRelations = relations(vendors, ({ one, many }) => ({
+  merchant: one(merchants, { fields: [vendors.merchantId], references: [merchants.id] }),
   category: one(categories, { fields: [vendors.categoryId], references: [categories.id] }),
   services: many(services),
   masters: many(masters),

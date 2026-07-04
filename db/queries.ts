@@ -60,7 +60,38 @@ export async function getUserBookings(userId: string) {
   });
 }
 
+// --- Merchant portal ---
+
+/** Vendors owned by a merchant, with category and a lightweight service count. */
+export async function getMerchantVendors(merchantId: string) {
+  return db.query.vendors.findMany({
+    where: (v, { eq }) => eq(v.merchantId, merchantId),
+    with: { category: true, services: { columns: { id: true } } },
+    orderBy: (v, { desc }) => [desc(v.createdAt)],
+  });
+}
+
+/** A single vendor owned by the merchant (or null), with everything for editing. */
+export async function getMerchantVendor(merchantId: string, vendorId: string) {
+  const vendor = await db.query.vendors.findFirst({
+    where: (v, { eq, and }) => and(eq(v.id, vendorId), eq(v.merchantId, merchantId)),
+    with: {
+      category: true,
+      services: { orderBy: (s, { asc }) => [asc(s.price)] },
+      workingHours: true,
+      masters: true,
+    },
+  });
+  return vendor ?? null;
+}
+
 export type Category = Awaited<ReturnType<typeof getCategories>>[number];
+export type MerchantVendorListItem = Awaited<
+  ReturnType<typeof getMerchantVendors>
+>[number];
+export type MerchantVendorDetail = NonNullable<
+  Awaited<ReturnType<typeof getMerchantVendor>>
+>;
 export type VendorListItem = Awaited<ReturnType<typeof getVendors>>[number];
 export type VendorDetail = NonNullable<Awaited<ReturnType<typeof getVendorById>>>;
 export type BookingContext = NonNullable<
