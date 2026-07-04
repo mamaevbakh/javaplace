@@ -17,3 +17,15 @@ export type ServiceInput = {
   description: string
   gender: "male" | "female" | "unisex"
 }
+
+export type MasterInput = {
+  name: string
+  bio: string
+  photoUrl: string
+}
+
+export type WorkingHoursInput = {
+  weekday: number
+  opensAt: string
+  closesAt: string
+}[]

@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache"
 import { redirect } from "next/navigation"
 import { and, eq } from "drizzle-orm"
 
-import { db, services, vendors, vendorWorkingHours } from "@/db"
+import { db, masters, services, vendors, vendorWorkingHours } from "@/db"
 import {
   getCurrentMerchant,
   loginMerchant,
@@ -12,7 +12,12 @@ import {
   registerMerchant,
   type MerchantAuthResult,
 } from "@/lib/merchant-auth"
-import type { ServiceInput, VendorInput } from "@/lib/partner-types"
+import type {
+  MasterInput,
+  ServiceInput,
+  VendorInput,
+  WorkingHoursInput,
+} from "@/lib/partner-types"
 
 async function requireMerchant() {
   const merchant = await getCurrentMerchant()
@@ -201,5 +206,86 @@ export async function deleteServiceAction(
   await db.delete(services).where(eq(services.id, serviceId))
   await recomputePriceFrom(service.vendorId)
   revalidatePath(`/partner/vendors/${service.vendorId}`)
+  return { ok: true }
+}
+
+// --- Master CRUD ---
+
+export async function createMasterAction(
+  vendorId: string,
+  input: MasterInput,
+): Promise<{ ok: boolean }> {
+  const merchant = await requireMerchant()
+  const vendor = await assertOwnsVendor(merchant.id, vendorId)
+  if (!vendor || !input.name.trim()) return { ok: false }
+
+  await db.insert(masters).values({
+    vendorId,
+    name: input.name.trim(),
+    bio: input.bio.trim() || null,
+    photoUrl: input.photoUrl.trim() || null,
+  })
+  revalidatePath(`/partner/vendors/${vendorId}`)
+  return { ok: true }
+}
+
+export async function updateMasterAction(
+  masterId: string,
+  input: MasterInput,
+): Promise<{ ok: boolean }> {
+  const merchant = await requireMerchant()
+  const master = await db.query.masters.findFirst({
+    where: (m, { eq }) => eq(m.id, masterId),
+    with: { vendor: true },
+  })
+  if (!master || master.vendor.merchantId !== merchant.id) return { ok: false }
+
+  await db
+    .update(masters)
+    .set({
+      name: input.name.trim(),
+      bio: input.bio.trim() || null,
+      photoUrl: input.photoUrl.trim() || null,
+    })
+    .where(eq(masters.id, masterId))
+  revalidatePath(`/partner/vendors/${master.vendorId}`)
+  return { ok: true }
+}
+
+export async function deleteMasterAction(masterId: string): Promise<{ ok: boolean }> {
+  const merchant = await requireMerchant()
+  const master = await db.query.masters.findFirst({
+    where: (m, { eq }) => eq(m.id, masterId),
+    with: { vendor: true },
+  })
+  if (!master || master.vendor.merchantId !== merchant.id) return { ok: false }
+
+  await db.delete(masters).where(eq(masters.id, masterId))
+  revalidatePath(`/partner/vendors/${master.vendorId}`)
+  return { ok: true }
+}
+
+// --- Working hours ---
+
+export async function updateWorkingHoursAction(
+  vendorId: string,
+  hours: WorkingHoursInput,
+): Promise<{ ok: boolean }> {
+  const merchant = await requireMerchant()
+  const vendor = await assertOwnsVendor(merchant.id, vendorId)
+  if (!vendor) return { ok: false }
+
+  await db.delete(vendorWorkingHours).where(eq(vendorWorkingHours.vendorId, vendorId))
+  if (hours.length > 0) {
+    await db.insert(vendorWorkingHours).values(
+      hours.map((h) => ({
+        vendorId,
+        weekday: h.weekday,
+        opensAt: h.opensAt,
+        closesAt: h.closesAt,
+      })),
+    )
+  }
+  revalidatePath(`/partner/vendors/${vendorId}`)
   return { ok: true }
 }

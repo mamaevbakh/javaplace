@@ -7,6 +7,8 @@ import { getCurrentMerchant } from "@/lib/merchant-auth"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { DeleteVendorButton } from "@/components/partner/partner-buttons"
+import { HoursEditor } from "@/components/partner/hours-editor"
+import { MastersManager } from "@/components/partner/masters-manager"
 import { ServicesManager } from "@/components/partner/services-manager"
 import { VendorForm } from "@/components/partner/vendor-form"
 
@@ -73,6 +75,20 @@ export default async function EditVendorPage({
       <section className="flex flex-col gap-3">
         <h2 className="text-sm font-medium">Услуги</h2>
         <ServicesManager vendorId={vendor.id} services={vendor.services} />
+      </section>
+
+      <Separator />
+
+      <section className="flex flex-col gap-3">
+        <h2 className="text-sm font-medium">Мастера</h2>
+        <MastersManager vendorId={vendor.id} masters={vendor.masters} />
+      </section>
+
+      <Separator />
+
+      <section className="flex flex-col gap-3">
+        <h2 className="text-sm font-medium">Часы работы</h2>
+        <HoursEditor vendorId={vendor.id} hours={vendor.workingHours} />
       </section>
 
       <Separator />
