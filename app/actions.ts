@@ -2,6 +2,8 @@
 
 import { db, bookings } from "@/db"
 import { authenticate as resolveUser, getCurrentUser } from "@/lib/auth"
+import { formatPrice } from "@/lib/format"
+import { isBotConfigured, sendMessage } from "@/lib/telegram-api"
 
 /** Establish a session from Telegram initData (or demo fallback). Called on app open. */
 export async function authenticate(initData: string) {
@@ -15,6 +17,7 @@ export type CreateBookingInput = {
   serviceId: string
   masterId: string | null
   startsAt: string // ISO string
+  whenText?: string // human-readable date/time for the confirmation message
 }
 
 export type CreateBookingResult =
@@ -54,6 +57,31 @@ export async function createBooking(
       status: "pending",
     })
     .returning({ id: bookings.id, status: bookings.status })
+
+  // Best-effort Telegram confirmation (§10) — never blocks the booking result.
+  if (isBotConfigured()) {
+    try {
+      const vendor = await db.query.vendors.findFirst({
+        where: (v, { eq }) => eq(v.id, input.vendorId),
+      })
+      const text = [
+        "✅ <b>Заявка принята!</b>",
+        "",
+        `<b>${service.name}</b>`,
+        vendor ? `📍 ${vendor.name}${vendor.address ? `, ${vendor.address}` : ""}` : null,
+        input.whenText ? `🗓 ${input.whenText}` : null,
+        `💳 ${formatPrice(service.price)}`,
+        "",
+        `Номер брони: <b>#${booking.id.slice(0, 8).toUpperCase()}</b>`,
+        "Мы сообщим, когда партнёр подтвердит запись.",
+      ]
+        .filter(Boolean)
+        .join("\n")
+      await sendMessage(user.telegramId, text)
+    } catch (error) {
+      console.error("[booking] telegram notify failed:", error)
+    }
+  }
 
   return { ok: true, bookingId: booking.id, status: booking.status }
 }

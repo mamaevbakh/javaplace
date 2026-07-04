@@ -14,7 +14,8 @@
     "db:migrate": "tsx db/migrate.ts",
     "db:seed": "tsx db/seed.ts",
     "db:seed:demo": "tsx db/seed-demo.ts",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "bot:setup": "tsx scripts/telegram-setup.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",

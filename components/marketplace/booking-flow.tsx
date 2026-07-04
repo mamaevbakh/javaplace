@@ -96,6 +96,7 @@ export function BookingFlow({
       serviceId: service.id,
       masterId: master === "any" ? null : master,
       startsAt: new Date(`${date}T${time}:00`).toISOString(),
+      whenText: `${fullDateFmt.format(selectedDay)}, ${time}`,
     }
     startTransition(async () => {
       let result = await createBooking(payload)
