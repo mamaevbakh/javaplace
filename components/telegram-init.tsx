@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { useRouter } from "next/navigation"
 
 import { authenticate } from "@/app/actions"
 
@@ -16,12 +17,18 @@ export function getInitData(): string {
  * Renders nothing.
  */
 export function TelegramInit() {
+  const router = useRouter()
+
   React.useEffect(() => {
     const webApp = window.Telegram?.WebApp
     webApp?.ready()
     webApp?.expand()
-    void authenticate(getInitData())
-  }, [])
+    // Establish the session, then re-render server components so pages that
+    // read the session (e.g. /bookings) reflect the signed-in user.
+    authenticate(getInitData()).then((user) => {
+      if (user) router.refresh()
+    })
+  }, [router])
 
   return null
 }

@@ -1,5 +1,7 @@
 "use server"
 
+import { and, eq } from "drizzle-orm"
+
 import { db, bookings } from "@/db"
 import { authenticate as resolveUser, getCurrentUser } from "@/lib/auth"
 import { formatPrice } from "@/lib/format"
@@ -84,4 +86,57 @@ export async function createBooking(
   }
 
   return { ok: true, bookingId: booking.id, status: booking.status }
+}
+
+/** Cancels a booking owned by the current user. */
+export async function cancelBooking(bookingId: string): Promise<{ ok: boolean }> {
+  const user = await getCurrentUser()
+  if (!user) return { ok: false }
+
+  const [updated] = await db
+    .update(bookings)
+    .set({ status: "cancelled", updatedAt: new Date() })
+    .where(and(eq(bookings.id, bookingId), eq(bookings.userId, user.id)))
+    .returning({ id: bookings.id })
+
+  return { ok: Boolean(updated) }
+}
+
+export type RescheduleInput = {
+  bookingId: string
+  masterId: string | null
+  startsAt: string // ISO string
+  whenText?: string
+}
+
+/** Moves an existing booking to a new time (and optionally master). */
+export async function rescheduleBooking(
+  input: RescheduleInput,
+): Promise<CreateBookingResult> {
+  const user = await getCurrentUser()
+  if (!user) return { ok: false, error: "unauthenticated" }
+
+  const booking = await db.query.bookings.findFirst({
+    where: (b, { eq, and }) =>
+      and(eq(b.id, input.bookingId), eq(b.userId, user.id)),
+    with: { service: true },
+  })
+  if (!booking) return { ok: false, error: "unknown" }
+
+  const startsAt = new Date(input.startsAt)
+  if (Number.isNaN(startsAt.getTime())) return { ok: false, error: "unknown" }
+  const endsAt = new Date(startsAt.getTime() + booking.service.durationMinutes * 60_000)
+
+  await db
+    .update(bookings)
+    .set({
+      startsAt,
+      endsAt,
+      masterId: input.masterId,
+      status: "pending",
+      updatedAt: new Date(),
+    })
+    .where(and(eq(bookings.id, input.bookingId), eq(bookings.userId, user.id)))
+
+  return { ok: true, bookingId: booking.id, status: "pending" }
 }

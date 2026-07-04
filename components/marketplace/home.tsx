@@ -1,9 +1,11 @@
 "use client"
 
 import * as React from "react"
-import { Search, SearchX } from "lucide-react"
+import Link from "next/link"
+import { CalendarDays, Search, SearchX } from "lucide-react"
 
 import type { Category, VendorListItem } from "@/db/queries"
+import { Button } from "@/components/ui/button"
 import {
   Empty,
   EmptyDescription,
@@ -44,11 +46,22 @@ export function Home({
 
   return (
     <main className="mx-auto flex min-h-svh w-full max-w-md flex-col gap-4 px-4 pt-5 pb-10">
-      <header className="flex flex-col gap-1">
-        <h1 className="font-heading text-xl font-semibold">Найдите услугу рядом</h1>
-        <p className="text-sm text-muted-foreground">
-          Барбершопы, салоны красоты, массаж, SPA и другое
-        </p>
+      <header className="flex items-start justify-between gap-2">
+        <div className="flex flex-col gap-1">
+          <h1 className="font-heading text-xl font-semibold">Найдите услугу рядом</h1>
+          <p className="text-sm text-muted-foreground">
+            Барбершопы, салоны красоты, массаж, SPA и другое
+          </p>
+        </div>
+        <Button
+          variant="ghost"
+          size="sm"
+          nativeButton={false}
+          render={<Link href="/bookings" />}
+        >
+          <CalendarDays data-icon="inline-start" />
+          Записи
+        </Button>
       </header>
 
       <InputGroup>

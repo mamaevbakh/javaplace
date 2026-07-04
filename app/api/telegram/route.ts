@@ -26,7 +26,7 @@ function mainMenu(appUrl: string): InlineKeyboard {
     inline_keyboard: [
       [{ text: "🚀 Открыть Mini App", web_app: { url: appUrl } }],
       [
-        { text: "📅 Мои записи", callback_data: "bookings" },
+        { text: "📅 Мои записи", web_app: { url: `${appUrl}/bookings` } },
         { text: "🆘 Поддержка", callback_data: "support" },
       ],
     ],
@@ -51,7 +51,11 @@ async function handleUpdate(update: TelegramUpdate, appUrl: string): Promise<voi
         await sendMessage(chatId, WELCOME, mainMenu(appUrl))
         break
       case "/bookings":
-        await sendMessage(chatId, "Ваши записи открываются в Mini App:", mainMenu(appUrl))
+        await sendMessage(chatId, "Ваши записи:", {
+          inline_keyboard: [
+            [{ text: "📅 Открыть мои записи", web_app: { url: `${appUrl}/bookings` } }],
+          ],
+        })
         break
       case "/help":
         await sendMessage(chatId, HELP)
@@ -71,8 +75,6 @@ async function handleUpdate(update: TelegramUpdate, appUrl: string): Promise<voi
     const chatId = cq.message?.chat?.id
     if (!chatId) return
     if (cq.data === "support") await sendMessage(chatId, SUPPORT)
-    else if (cq.data === "bookings")
-      await sendMessage(chatId, "Ваши записи открываются в Mini App:", mainMenu(appUrl))
   }
 }
 

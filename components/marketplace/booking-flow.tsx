@@ -7,7 +7,7 @@ import { CheckCircle2, ChevronLeft } from "lucide-react"
 import type { BookingContext } from "@/db/queries"
 import { computeSlots } from "@/lib/slots"
 import { formatDuration, formatPrice } from "@/lib/format"
-import { authenticate, createBooking } from "@/app/actions"
+import { authenticate, createBooking, rescheduleBooking } from "@/app/actions"
 import { getInitData } from "@/components/telegram-init"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -55,9 +55,11 @@ function dayTopLabel(d: Date, index: number): string {
 export function BookingFlow({
   vendor,
   service,
+  rescheduleId,
 }: {
   vendor: BookingContext["vendor"]
   service: BookingContext["service"]
+  rescheduleId?: string
 }) {
   const days = React.useMemo(() => buildDays(DAY_COUNT), [])
   const hasMasters = vendor.masters.length > 0
@@ -91,24 +93,31 @@ export function BookingFlow({
   function confirm() {
     if (!time || pending) return
     setError(null)
-    const payload = {
-      vendorId: vendor.id,
-      serviceId: service.id,
-      masterId: master === "any" ? null : master,
-      startsAt: new Date(`${date}T${time}:00`).toISOString(),
-      whenText: `${fullDateFmt.format(selectedDay)}, ${time}`,
-    }
+    const masterId = master === "any" ? null : master
+    const startsAt = new Date(`${date}T${time}:00`).toISOString()
+    const whenText = `${fullDateFmt.format(selectedDay)}, ${time}`
+    const submit = () =>
+      rescheduleId
+        ? rescheduleBooking({ bookingId: rescheduleId, masterId, startsAt, whenText })
+        : createBooking({
+            vendorId: vendor.id,
+            serviceId: service.id,
+            masterId,
+            startsAt,
+            whenText,
+          })
+
     startTransition(async () => {
-      let result = await createBooking(payload)
+      let result = await submit()
       // Session may not be warm yet on first open — authenticate then retry once.
       if (!result.ok && result.error === "unauthenticated") {
         await authenticate(getInitData())
-        result = await createBooking(payload)
+        result = await submit()
       }
       if (result.ok) {
         setBookingRef({ id: result.bookingId, status: result.status })
       } else {
-        setError("Не удалось создать бронь. Попробуйте ещё раз.")
+        setError("Не удалось сохранить запись. Попробуйте ещё раз.")
       }
     })
   }
@@ -146,13 +155,13 @@ export function BookingFlow({
             <EmptyMedia variant="icon">
               <CheckCircle2 />
             </EmptyMedia>
-            <EmptyTitle>Вы записаны!</EmptyTitle>
+            <EmptyTitle>{rescheduleId ? "Запись перенесена!" : "Вы записаны!"}</EmptyTitle>
             <EmptyDescription>
-              Заявка отправлена партнёру. Номер брони{" "}
+              {rescheduleId ? "Новое время сохранено" : "Заявка отправлена партнёру"}. Номер брони{" "}
               <span className="font-medium text-foreground">
                 #{bookingRef.id.slice(0, 8).toUpperCase()}
               </span>
-              . Уведомления в Telegram появятся вместе с ботом.
+              . Уведомления придут в Telegram.
             </EmptyDescription>
           </EmptyHeader>
         </Empty>

@@ -51,9 +51,19 @@ export async function getServiceBookingContext(vendorId: string, serviceId: stri
   return { vendor: rest, service: services[0] };
 }
 
+/** A user's bookings with vendor/service/master, newest first. */
+export async function getUserBookings(userId: string) {
+  return db.query.bookings.findMany({
+    where: (b, { eq }) => eq(b.userId, userId),
+    with: { vendor: true, service: true, master: true },
+    orderBy: (b, { desc }) => [desc(b.startsAt)],
+  });
+}
+
 export type Category = Awaited<ReturnType<typeof getCategories>>[number];
 export type VendorListItem = Awaited<ReturnType<typeof getVendors>>[number];
 export type VendorDetail = NonNullable<Awaited<ReturnType<typeof getVendorById>>>;
 export type BookingContext = NonNullable<
   Awaited<ReturnType<typeof getServiceBookingContext>>
 >;
+export type BookingItem = Awaited<ReturnType<typeof getUserBookings>>[number];
