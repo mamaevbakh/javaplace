@@ -23,6 +23,7 @@ export async function getVendorById(id: string) {
     with: {
       category: true,
       workingHours: true,
+      photos: { orderBy: (p, { asc }) => [asc(p.sortOrder)] },
       services: {
         where: (s, { eq }) => eq(s.isActive, true),
         orderBy: (s, { asc }) => [asc(s.price)],
@@ -80,6 +81,7 @@ export async function getMerchantVendor(merchantId: string, vendorId: string) {
       services: { orderBy: (s, { asc }) => [asc(s.price)] },
       workingHours: true,
       masters: true,
+      photos: { orderBy: (p, { asc }) => [asc(p.sortOrder)] },
     },
   });
   return vendor ?? null;

@@ -3,8 +3,16 @@
 import { revalidatePath } from "next/cache"
 import { redirect } from "next/navigation"
 import { and, eq } from "drizzle-orm"
+import { del } from "@vercel/blob"
 
-import { db, masters, services, vendors, vendorWorkingHours } from "@/db"
+import {
+  db,
+  masters,
+  services,
+  vendorPhotos,
+  vendors,
+  vendorWorkingHours,
+} from "@/db"
 import {
   getCurrentMerchant,
   loginMerchant,
@@ -287,5 +295,51 @@ export async function updateWorkingHoursAction(
     )
   }
   revalidatePath(`/partner/vendors/${vendorId}`)
+  return { ok: true }
+}
+
+// --- Photos (uploaded to Vercel Blob via the client; here we persist the URL) ---
+
+export async function addVendorPhotoAction(
+  vendorId: string,
+  url: string,
+): Promise<{ ok: boolean }> {
+  const merchant = await requireMerchant()
+  const vendor = await assertOwnsVendor(merchant.id, vendorId)
+  if (!vendor || !url) return { ok: false }
+
+  const existing = await db
+    .select({ sortOrder: vendorPhotos.sortOrder })
+    .from(vendorPhotos)
+    .where(eq(vendorPhotos.vendorId, vendorId))
+  const nextOrder = existing.length
+    ? Math.max(...existing.map((e) => e.sortOrder)) + 1
+    : 0
+
+  await db.insert(vendorPhotos).values({ vendorId, url, sortOrder: nextOrder })
+  revalidatePath(`/partner/vendors/${vendorId}`)
+  revalidatePath(`/vendor/${vendorId}`)
+  return { ok: true }
+}
+
+export async function deleteVendorPhotoAction(
+  photoId: string,
+): Promise<{ ok: boolean }> {
+  const merchant = await requireMerchant()
+  const photo = await db.query.vendorPhotos.findFirst({
+    where: (p, { eq }) => eq(p.id, photoId),
+    with: { vendor: true },
+  })
+  if (!photo || photo.vendor.merchantId !== merchant.id) return { ok: false }
+
+  await db.delete(vendorPhotos).where(eq(vendorPhotos.id, photoId))
+  // Best-effort removal of the underlying blob file.
+  try {
+    await del(photo.url)
+  } catch {
+    // ignore — the DB row is gone, which is what the UI reflects
+  }
+  revalidatePath(`/partner/vendors/${photo.vendorId}`)
+  revalidatePath(`/vendor/${photo.vendorId}`)
   return { ok: true }
 }

@@ -134,6 +134,23 @@ export const vendorWorkingHours = pgTable(
 );
 
 // ---------------------------------------------------------------------------
+// Vendor photos (uploaded to Vercel Blob; shown as a carousel in the app)
+// ---------------------------------------------------------------------------
+export const vendorPhotos = pgTable(
+  "vendor_photos",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    vendorId: uuid("vendor_id")
+      .notNull()
+      .references(() => vendors.id, { onDelete: "cascade" }),
+    url: text("url").notNull(),
+    sortOrder: integer("sort_order").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("vendor_photos_vendor_idx").on(t.vendorId)],
+);
+
+// ---------------------------------------------------------------------------
 // Masters (staff). Optional per vendor.
 // ---------------------------------------------------------------------------
 export const masters = pgTable(
@@ -310,6 +327,7 @@ export const vendorsRelations = relations(vendors, ({ one, many }) => ({
   services: many(services),
   masters: many(masters),
   workingHours: many(vendorWorkingHours),
+  photos: many(vendorPhotos),
   bookings: many(bookings),
   reviews: many(reviews),
   favorites: many(favorites),
@@ -318,6 +336,10 @@ export const vendorsRelations = relations(vendors, ({ one, many }) => ({
 
 export const vendorWorkingHoursRelations = relations(vendorWorkingHours, ({ one }) => ({
   vendor: one(vendors, { fields: [vendorWorkingHours.vendorId], references: [vendors.id] }),
+}));
+
+export const vendorPhotosRelations = relations(vendorPhotos, ({ one }) => ({
+  vendor: one(vendors, { fields: [vendorPhotos.vendorId], references: [vendors.id] }),
 }));
 
 export const mastersRelations = relations(masters, ({ one, many }) => ({

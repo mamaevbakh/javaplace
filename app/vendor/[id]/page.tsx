@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
+import { PhotoCarousel } from "@/components/marketplace/photo-carousel"
 
 export default async function VendorPage({
   params,
@@ -39,9 +40,13 @@ export default async function VendorPage({
         Назад
       </Button>
 
-      <div className="flex aspect-video items-center justify-center rounded-xl bg-muted text-7xl">
-        {vendor.coverUrl ?? "🏬"}
-      </div>
+      {vendor.photos.length > 0 ? (
+        <PhotoCarousel photos={vendor.photos} alt={vendor.name} />
+      ) : (
+        <div className="flex aspect-video items-center justify-center rounded-xl bg-muted text-7xl">
+          {vendor.coverUrl ?? "🏬"}
+        </div>
+      )}
 
       <header className="flex flex-col gap-2">
         <div className="flex items-start justify-between gap-2">

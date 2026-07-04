@@ -9,6 +9,7 @@ import { Separator } from "@/components/ui/separator"
 import { DeleteVendorButton } from "@/components/partner/partner-buttons"
 import { HoursEditor } from "@/components/partner/hours-editor"
 import { MastersManager } from "@/components/partner/masters-manager"
+import { PhotosManager } from "@/components/partner/photos-manager"
 import { ServicesManager } from "@/components/partner/services-manager"
 import { VendorForm } from "@/components/partner/vendor-form"
 
@@ -68,6 +69,13 @@ export default async function EditVendorPage({
             longitude: vendor.longitude,
           }}
         />
+      </section>
+
+      <Separator />
+
+      <section className="flex flex-col gap-3">
+        <h2 className="text-sm font-medium">Фото</h2>
+        <PhotosManager vendorId={vendor.id} photos={vendor.photos} />
       </section>
 
       <Separator />
