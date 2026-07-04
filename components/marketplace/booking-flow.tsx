@@ -7,6 +7,8 @@ import { CheckCircle2, ChevronLeft } from "lucide-react"
 import type { BookingContext } from "@/db/queries"
 import { computeSlots } from "@/lib/slots"
 import { formatDuration, formatPrice } from "@/lib/format"
+import { authenticate, createBooking } from "@/app/actions"
+import { getInitData } from "@/components/telegram-init"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import {
@@ -63,7 +65,12 @@ export function BookingFlow({
   const [master, setMaster] = React.useState("any")
   const [date, setDate] = React.useState(() => isoDate(days[0]))
   const [time, setTime] = React.useState<string | null>(null)
-  const [confirmed, setConfirmed] = React.useState(false)
+  const [pending, startTransition] = React.useTransition()
+  const [error, setError] = React.useState<string | null>(null)
+  const [bookingRef, setBookingRef] = React.useState<{
+    id: string
+    status: string
+  } | null>(null)
 
   const slots = React.useMemo(
     () =>
@@ -79,6 +86,30 @@ export function BookingFlow({
   function selectDate(next: string) {
     setDate(next)
     setTime(null)
+  }
+
+  function confirm() {
+    if (!time || pending) return
+    setError(null)
+    const payload = {
+      vendorId: vendor.id,
+      serviceId: service.id,
+      masterId: master === "any" ? null : master,
+      startsAt: new Date(`${date}T${time}:00`).toISOString(),
+    }
+    startTransition(async () => {
+      let result = await createBooking(payload)
+      // Session may not be warm yet on first open — authenticate then retry once.
+      if (!result.ok && result.error === "unauthenticated") {
+        await authenticate(getInitData())
+        result = await createBooking(payload)
+      }
+      if (result.ok) {
+        setBookingRef({ id: result.bookingId, status: result.status })
+      } else {
+        setError("Не удалось создать бронь. Попробуйте ещё раз.")
+      }
+    })
   }
 
   const selectedDay = days.find((d) => isoDate(d) === date) ?? days[0]
@@ -106,7 +137,7 @@ export function BookingFlow({
     </Card>
   )
 
-  if (confirmed) {
+  if (bookingRef) {
     return (
       <main className="mx-auto flex min-h-svh w-full max-w-md flex-col gap-4 px-4 pt-10 pb-10">
         <Empty>
@@ -114,16 +145,19 @@ export function BookingFlow({
             <EmptyMedia variant="icon">
               <CheckCircle2 />
             </EmptyMedia>
-            <EmptyTitle>Почти готово</EmptyTitle>
+            <EmptyTitle>Вы записаны!</EmptyTitle>
             <EmptyDescription>
-              Детали брони собраны. Подтверждение и сохранение записи появятся
-              вместе с Telegram-авторизацией — это следующий шаг.
+              Заявка отправлена партнёру. Номер брони{" "}
+              <span className="font-medium text-foreground">
+                #{bookingRef.id.slice(0, 8).toUpperCase()}
+              </span>
+              . Уведомления в Telegram появятся вместе с ботом.
             </EmptyDescription>
           </EmptyHeader>
         </Empty>
         {summary}
-        <Button variant="outline" render={<Link href={`/vendor/${vendor.id}`} />}>
-          Назад к партнёру
+        <Button variant="outline" nativeButton={false} render={<Link href="/" />}>
+          На главную
         </Button>
       </main>
     )
@@ -135,6 +169,7 @@ export function BookingFlow({
         <Button
           variant="ghost"
           size="icon-sm"
+          nativeButton={false}
           render={<Link href={`/vendor/${vendor.id}`} />}
         >
           <ChevronLeft />
@@ -217,13 +252,16 @@ export function BookingFlow({
 
       <div className="fixed inset-x-0 bottom-0 border-t bg-background/95 backdrop-blur">
         <div className="mx-auto w-full max-w-md px-4 py-3">
+          {error ? (
+            <p className="mb-2 text-center text-sm text-destructive">{error}</p>
+          ) : null}
           <Button
             size="lg"
             className="w-full"
-            disabled={!time}
-            onClick={() => setConfirmed(true)}
+            disabled={!time || pending}
+            onClick={confirm}
           >
-            {time ? "Продолжить" : "Выберите время"}
+            {pending ? "Создаём бронь…" : time ? "Записаться" : "Выберите время"}
           </Button>
         </div>
       </div>

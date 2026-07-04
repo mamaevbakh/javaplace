@@ -32,6 +32,7 @@ export default async function VendorPage({
         variant="ghost"
         size="sm"
         className="-ml-2 self-start"
+        nativeButton={false}
         render={<Link href="/" />}
       >
         <ChevronLeft data-icon="inline-start" />
@@ -84,6 +85,7 @@ export default async function VendorPage({
           <Button
             variant="outline"
             className="flex-1"
+            nativeButton={false}
             render={<a href={`tel:${vendor.phone}`} />}
           >
             <Phone data-icon="inline-start" />
@@ -94,6 +96,7 @@ export default async function VendorPage({
           <Button
             variant="outline"
             className="flex-1"
+            nativeButton={false}
             render={<a href={mapsHref} target="_blank" rel="noreferrer" />}
           >
             <Navigation data-icon="inline-start" />
