@@ -171,6 +171,7 @@ async function main() {
         name: d.name,
         description: d.description,
         address: d.address,
+        phone: `+7 495 ${String(100 + i).padStart(3, "0")}-45-67`,
         latitude: BASE_LAT + i * 0.008,
         longitude: BASE_LNG + i * 0.006,
         coverUrl: d.cover,
