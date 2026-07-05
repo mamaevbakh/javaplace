@@ -15,11 +15,18 @@ export async function getCategories() {
   return db.select().from(categories).orderBy(asc(categories.sortOrder));
 }
 
-/** Active vendors with their category, best-rated first (home list). */
+/** Active vendors with their category + first photo (for the card cover), best-rated first. */
 export async function getVendors() {
   return db.query.vendors.findMany({
     where: (v, { eq, and }) => and(eq(v.isActive, true), ownerApproved(v.merchantId)),
-    with: { category: true },
+    with: {
+      category: true,
+      photos: {
+        orderBy: (p, { asc }) => [asc(p.sortOrder)],
+        limit: 1,
+        columns: { id: true, url: true },
+      },
+    },
     orderBy: (v, { desc }) => [desc(v.ratingAvg)],
   });
 }

@@ -1,3 +1,4 @@
+import Image from "next/image"
 import Link from "next/link"
 import { MapPin, Star } from "lucide-react"
 
@@ -6,14 +7,28 @@ import { formatPriceFrom } from "@/lib/format"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 
+// Card spans the full mobile column up to the max-w-md (448px) content width.
+const COVER_SIZES = "(max-width: 448px) 100vw, 416px"
+
 export function VendorCard({ vendor }: { vendor: VendorListItem }) {
   const priceFrom = formatPriceFrom(vendor.priceFrom)
+  const cover = vendor.photos?.[0]
 
   return (
     <Link href={`/vendor/${vendor.id}`} className="block">
       <Card className="gap-3 pt-0 transition-shadow hover:ring-foreground/20">
-        <div className="flex h-20 items-center justify-center bg-muted text-4xl">
-          {vendor.coverUrl ?? "🏬"}
+        <div className="relative flex h-24 items-center justify-center overflow-hidden bg-muted text-4xl">
+          {cover ? (
+            <Image
+              src={cover.url}
+              alt={vendor.name}
+              fill
+              sizes={COVER_SIZES}
+              className="object-cover"
+            />
+          ) : (
+            (vendor.coverUrl ?? "🏬")
+          )}
         </div>
 
         <CardHeader>
