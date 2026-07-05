@@ -55,7 +55,7 @@ export function Home({
         </div>
         <Button
           variant="ghost"
-          size="sm"
+          className="h-10 shrink-0"
           nativeButton={false}
           render={<Link href="/bookings" />}
         >
