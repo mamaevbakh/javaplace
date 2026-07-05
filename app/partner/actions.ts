@@ -1,6 +1,6 @@
 "use server"
 
-import { revalidatePath } from "next/cache"
+import { updateTag } from "next/cache"
 import { redirect } from "next/navigation"
 import { and, eq } from "drizzle-orm"
 import { del } from "@vercel/blob"
@@ -45,6 +45,19 @@ async function assertOwnsVendor(merchantId: string, vendorId: string) {
   return vendor ?? null
 }
 
+/**
+ * Home list + vendor detail are the only cached surfaces (both tagged "vendors").
+ * Bust that tag when public-facing vendor data changes (profile, price, photos,
+ * hours, moderation). The portal is dynamic and refreshes client-side
+ * (router.refresh), so portal-only mutations — masters, booking status, Telegram —
+ * need no revalidation here.
+ */
+function revalidatePublicVendors() {
+  // updateTag (not revalidateTag) in a Server Action: immediate, read-your-writes,
+  // so the merchant sees their edit reflected right away.
+  updateTag("vendors")
+}
+
 /** Keeps vendors.priceFrom in sync with its cheapest active service. */
 async function recomputePriceFrom(vendorId: string) {
   const rows = await db
@@ -56,6 +69,8 @@ async function recomputePriceFrom(vendorId: string) {
     .update(vendors)
     .set({ priceFrom, updatedAt: new Date() })
     .where(eq(vendors.id, vendorId))
+  // Service create/update/delete all funnel through here → one bust covers them.
+  revalidatePublicVendors()
 }
 
 // --- Auth ---
@@ -115,7 +130,7 @@ export async function createVendorAction(
     })),
   )
 
-  revalidatePath("/partner")
+  revalidatePublicVendors()
   return { ok: true, vendorId: vendor.id }
 }
 
@@ -142,8 +157,7 @@ export async function updateVendorAction(
     .where(and(eq(vendors.id, vendorId), eq(vendors.merchantId, merchant.id)))
     .returning({ id: vendors.id })
 
-  revalidatePath("/partner")
-  revalidatePath(`/partner/vendors/${vendorId}`)
+  revalidatePublicVendors()
   return { ok: Boolean(updated) }
 }
 
@@ -152,7 +166,7 @@ export async function deleteVendorAction(vendorId: string): Promise<void> {
   await db
     .delete(vendors)
     .where(and(eq(vendors.id, vendorId), eq(vendors.merchantId, merchant.id)))
-  revalidatePath("/partner")
+  revalidatePublicVendors()
   redirect("/partner")
 }
 
@@ -177,7 +191,6 @@ export async function createServiceAction(
   })
 
   await recomputePriceFrom(vendorId)
-  revalidatePath(`/partner/vendors/${vendorId}`)
   return { ok: true }
 }
 
@@ -204,7 +217,6 @@ export async function updateServiceAction(
     .where(eq(services.id, serviceId))
 
   await recomputePriceFrom(service.vendorId)
-  revalidatePath(`/partner/vendors/${service.vendorId}`)
   return { ok: true }
 }
 
@@ -220,7 +232,6 @@ export async function deleteServiceAction(
 
   await db.delete(services).where(eq(services.id, serviceId))
   await recomputePriceFrom(service.vendorId)
-  revalidatePath(`/partner/vendors/${service.vendorId}`)
   return { ok: true }
 }
 
@@ -240,7 +251,8 @@ export async function createMasterAction(
     bio: input.bio.trim() || null,
     photoUrl: input.photoUrl.trim() || null,
   })
-  revalidatePath(`/partner/vendors/${vendorId}`)
+  // Masters aren't shown on the home list or vendor detail (only the booking
+  // picker, which is dynamic), so no public cache to bust.
   return { ok: true }
 }
 
@@ -263,7 +275,6 @@ export async function updateMasterAction(
       photoUrl: input.photoUrl.trim() || null,
     })
     .where(eq(masters.id, masterId))
-  revalidatePath(`/partner/vendors/${master.vendorId}`)
   return { ok: true }
 }
 
@@ -276,7 +287,6 @@ export async function deleteMasterAction(masterId: string): Promise<{ ok: boolea
   if (!master || master.vendor.merchantId !== merchant.id) return { ok: false }
 
   await db.delete(masters).where(eq(masters.id, masterId))
-  revalidatePath(`/partner/vendors/${master.vendorId}`)
   return { ok: true }
 }
 
@@ -301,7 +311,7 @@ export async function updateWorkingHoursAction(
       })),
     )
   }
-  revalidatePath(`/partner/vendors/${vendorId}`)
+  revalidatePublicVendors()
   return { ok: true }
 }
 
@@ -324,8 +334,7 @@ export async function addVendorPhotoAction(
     : 0
 
   await db.insert(vendorPhotos).values({ vendorId, url, sortOrder: nextOrder })
-  revalidatePath(`/partner/vendors/${vendorId}`)
-  revalidatePath(`/vendor/${vendorId}`)
+  revalidatePublicVendors() // first photo is the home-card cover
   return { ok: true }
 }
 
@@ -346,8 +355,7 @@ export async function deleteVendorPhotoAction(
   } catch {
     // ignore — the DB row is gone, which is what the UI reflects
   }
-  revalidatePath(`/partner/vendors/${photo.vendorId}`)
-  revalidatePath(`/vendor/${photo.vendorId}`)
+  revalidatePublicVendors()
   return { ok: true }
 }
 
@@ -377,7 +385,6 @@ export async function disconnectTelegramAction(): Promise<{ ok: boolean }> {
     .update(merchants)
     .set({ telegramChatId: null, updatedAt: new Date() })
     .where(eq(merchants.id, merchant.id))
-  revalidatePath("/partner")
   return { ok: true }
 }
 
@@ -424,7 +431,6 @@ export async function updateBookingStatusAction(
     .update(bookings)
     .set({ status: transition.to, updatedAt: new Date() })
     .where(eq(bookings.id, bookingId))
-  revalidatePath("/partner/bookings")
 
   // Tell the client when the partner confirms or declines. Best-effort.
   if (isBotConfigured() && (action === "confirm" || action === "decline")) {

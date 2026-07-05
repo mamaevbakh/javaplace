@@ -3,6 +3,9 @@ import { redirect } from "next/navigation"
 import { getCurrentMerchant } from "@/lib/merchant-auth"
 import { AuthForm } from "@/components/partner/auth-form"
 
+// Auth-gated + dynamic (reads the merchant cookie): opt out of prerender/instant validation.
+export const instant = false
+
 export default async function PartnerLoginPage() {
   if (await getCurrentMerchant()) redirect("/partner")
 

@@ -1,5 +1,6 @@
 import { db, merchants } from "@/db"
 import { eq } from "drizzle-orm"
+import { revalidateTag } from "next/cache"
 import { verifyMerchantLinkToken } from "@/lib/link-token"
 import {
   answerCallbackQuery,
@@ -69,6 +70,10 @@ async function handleMerchantModeration(
     await answerCallbackQuery(cq.id, "Партнёр не найден")
     return
   }
+  // Approval/rejection changes which vendors are publicly visible. This webhook is
+  // an external caller, so expire the tag immediately (the sanctioned route-handler
+  // pattern; updateTag is Server-Action-only).
+  revalidateTag("vendors", { expire: 0 })
   await answerCallbackQuery(cq.id, action === "approve" ? "Одобрено ✅" : "Отклонено ❌")
 
   // Reflect the decision on the admin message (drops the buttons).

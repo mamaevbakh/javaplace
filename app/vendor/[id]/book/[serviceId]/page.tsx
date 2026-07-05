@@ -5,6 +5,9 @@ import { getServiceBookingContext } from "@/db/queries"
 import { getCurrentUser } from "@/lib/auth"
 import { BookingFlow } from "@/components/marketplace/booking-flow"
 
+// Reads the session cookie + is highly interactive: keep dynamic, opt out of prerender/instant validation.
+export const instant = false
+
 export default async function BookPage({
   params,
   searchParams,

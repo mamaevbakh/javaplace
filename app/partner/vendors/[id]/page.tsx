@@ -13,6 +13,9 @@ import { PhotosManager } from "@/components/partner/photos-manager"
 import { ServicesManager } from "@/components/partner/services-manager"
 import { VendorForm } from "@/components/partner/vendor-form"
 
+// Auth-gated + dynamic (reads the merchant cookie): opt out of prerender/instant validation.
+export const instant = false
+
 export default async function EditVendorPage({
   params,
 }: {

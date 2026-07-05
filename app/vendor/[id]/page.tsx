@@ -1,6 +1,6 @@
+import { Suspense } from "react"
 import Link from "next/link"
 import { notFound } from "next/navigation"
-import { connection } from "next/server"
 import { ChevronLeft, ChevronRight, Clock, MapPin, Navigation, Phone, Star } from "lucide-react"
 
 import { getVendorById } from "@/db/queries"
@@ -11,22 +11,13 @@ import { Card } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
 import { PhotoCarousel } from "@/components/marketplace/photo-carousel"
 
-export default async function VendorPage({
+export default function VendorPage({
   params,
 }: {
   params: Promise<{ id: string }>
 }) {
-  await connection()
-  const { id } = await params
-  const vendor = await getVendorById(id)
-  if (!vendor) notFound()
-
-  const hours = formatWorkingHours(vendor.workingHours)
-  const mapsHref =
-    vendor.latitude != null && vendor.longitude != null
-      ? `https://maps.google.com/?q=${vendor.latitude},${vendor.longitude}`
-      : null
-
+  // The back button is static (ships in the shell); the vendor content is cached
+  // and streams into the skeleton — instant on a warm cache.
   return (
     <main className="mx-auto flex min-h-svh w-full max-w-md flex-col gap-4 px-4 pt-3 pb-10">
       <Button
@@ -40,6 +31,37 @@ export default async function VendorPage({
         Назад
       </Button>
 
+      <Suspense fallback={<VendorSkeleton />}>
+        <VendorContent params={params} />
+      </Suspense>
+    </main>
+  )
+}
+
+function VendorSkeleton() {
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="aspect-video animate-pulse rounded-xl bg-muted" />
+      <div className="h-6 w-2/3 animate-pulse rounded bg-muted" />
+      <div className="h-4 w-1/2 animate-pulse rounded bg-muted" />
+      <div className="h-16 animate-pulse rounded bg-muted" />
+    </div>
+  )
+}
+
+async function VendorContent({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
+  const vendor = await getVendorById(id)
+  if (!vendor) notFound()
+
+  const hours = formatWorkingHours(vendor.workingHours)
+  const mapsHref =
+    vendor.latitude != null && vendor.longitude != null
+      ? `https://maps.google.com/?q=${vendor.latitude},${vendor.longitude}`
+      : null
+
+  return (
+    <>
       {vendor.photos.length > 0 ? (
         <PhotoCarousel photos={vendor.photos} alt={vendor.name} />
       ) : (
@@ -138,6 +160,6 @@ export default async function VendorPage({
           </Link>
         ))}
       </section>
-    </main>
+    </>
   )
 }

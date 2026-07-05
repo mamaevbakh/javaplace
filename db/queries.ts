@@ -1,4 +1,5 @@
 import { and, asc, eq, gt, inArray, lt, ne, sql, type Column } from "drizzle-orm";
+import { cacheLife, cacheTag } from "next/cache";
 import { db } from "./index";
 import { bookings, categories, vendors } from "./schema";
 
@@ -10,13 +11,28 @@ function ownerApproved(merchantIdCol: Column) {
   return sql`(${merchantIdCol} is null or exists (select 1 from merchants m where m.id = ${merchantIdCol} and m.status = 'approved'))`;
 }
 
-/** All service categories, ordered for the filter row. */
+/**
+ * All service categories, ordered for the filter row. Cached — categories are
+ * effectively static (bust with revalidateTag('categories') if they ever change).
+ */
 export async function getCategories() {
+  "use cache";
+  cacheLife("days");
+  cacheTag("categories");
   return db.select().from(categories).orderBy(asc(categories.sortOrder));
 }
 
-/** Active vendors with their category + first photo (for the card cover), best-rated first. */
+/**
+ * Active vendors with their category + first photo (for the card cover), best-rated
+ * first. Cached into the home page's static shell; busted by revalidateTag('vendors')
+ * on any vendor/service/photo/moderation change.
+ *
+ * NOTE: for serverless persistence across instances, upgrade to "use cache: remote".
+ */
 export async function getVendors() {
+  "use cache";
+  cacheLife("hours");
+  cacheTag("vendors");
   return db.query.vendors.findMany({
     where: (v, { eq, and }) => and(eq(v.isActive, true), ownerApproved(v.merchantId)),
     with: {
@@ -31,8 +47,14 @@ export async function getVendors() {
   });
 }
 
-/** A single vendor with category, working hours, and its active services. */
+/**
+ * A single vendor with category, working hours, and its active services. Cached
+ * per id (the arg is part of the cache key); busted by revalidateTag('vendors').
+ */
 export async function getVendorById(id: string) {
+  "use cache";
+  cacheLife("hours");
+  cacheTag("vendors");
   return db.query.vendors.findFirst({
     where: (v, { eq, and }) => and(eq(v.id, id), ownerApproved(v.merchantId)),
     with: {

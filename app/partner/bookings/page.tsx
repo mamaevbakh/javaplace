@@ -7,6 +7,9 @@ import { getCurrentMerchant } from "@/lib/merchant-auth"
 import { Button } from "@/components/ui/button"
 import { BookingsInbox } from "@/components/partner/bookings-inbox"
 
+// Auth-gated + dynamic (reads the merchant cookie): opt out of prerender/instant validation.
+export const instant = false
+
 export default async function PartnerBookingsPage() {
   const merchant = await getCurrentMerchant()
   if (!merchant) redirect("/partner/login")

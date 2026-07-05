@@ -13,6 +13,9 @@ import {
 } from "@/components/ui/empty"
 import { BookingsList } from "@/components/marketplace/bookings-list"
 
+// Auth-gated + dynamic (reads the session cookie): opt out of prerender/instant validation.
+export const instant = false
+
 export default async function BookingsPage() {
   const user = await getCurrentUser()
   const bookings = user ? await getUserBookings(user.id) : []

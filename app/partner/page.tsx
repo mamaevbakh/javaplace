@@ -11,6 +11,9 @@ import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/
 import { LogoutButton } from "@/components/partner/partner-buttons"
 import { TelegramConnect } from "@/components/partner/telegram-connect"
 
+// Auth-gated + dynamic (reads the merchant cookie): opt out of prerender/instant validation.
+export const instant = false
+
 export default async function PartnerDashboard() {
   const merchant = await getCurrentMerchant()
   if (!merchant) redirect("/partner/login")
