@@ -1,6 +1,14 @@
-import { asc } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, lt, ne, sql, type Column } from "drizzle-orm";
 import { db } from "./index";
-import { categories } from "./schema";
+import { bookings, categories, vendors } from "./schema";
+
+/**
+ * Public-visibility condition for a vendor: it's shown only if it has no owning
+ * merchant (platform-seeded) or its merchant has been approved (moderation).
+ */
+function ownerApproved(merchantIdCol: Column) {
+  return sql`(${merchantIdCol} is null or exists (select 1 from merchants m where m.id = ${merchantIdCol} and m.status = 'approved'))`;
+}
 
 /** All service categories, ordered for the filter row. */
 export async function getCategories() {
@@ -10,7 +18,7 @@ export async function getCategories() {
 /** Active vendors with their category, best-rated first (home list). */
 export async function getVendors() {
   return db.query.vendors.findMany({
-    where: (v, { eq }) => eq(v.isActive, true),
+    where: (v, { eq, and }) => and(eq(v.isActive, true), ownerApproved(v.merchantId)),
     with: { category: true },
     orderBy: (v, { desc }) => [desc(v.ratingAvg)],
   });
@@ -19,7 +27,7 @@ export async function getVendors() {
 /** A single vendor with category, working hours, and its active services. */
 export async function getVendorById(id: string) {
   return db.query.vendors.findFirst({
-    where: (v, { eq }) => eq(v.id, id),
+    where: (v, { eq, and }) => and(eq(v.id, id), ownerApproved(v.merchantId)),
     with: {
       category: true,
       workingHours: true,
@@ -35,7 +43,7 @@ export async function getVendorById(id: string) {
 /** Everything the booking screen needs: the vendor (+ masters, hours) and one service. */
 export async function getServiceBookingContext(vendorId: string, serviceId: string) {
   const vendor = await db.query.vendors.findFirst({
-    where: (v, { eq }) => eq(v.id, vendorId),
+    where: (v, { eq, and }) => and(eq(v.id, vendorId), ownerApproved(v.merchantId)),
     with: {
       category: true,
       workingHours: true,
@@ -50,6 +58,35 @@ export async function getServiceBookingContext(vendorId: string, serviceId: stri
 
   const { services, ...rest } = vendor;
   return { vendor: rest, service: services[0] };
+}
+
+/**
+ * Occupied time ranges for a vendor that overlap the [from, to) UTC window.
+ * Only "live" bookings (pending/confirmed) hold a slot; cancelled/completed/
+ * no_show do not. `excludeBookingId` skips a booking being rescheduled.
+ */
+export async function getVendorBookedRanges(
+  vendorId: string,
+  from: Date,
+  to: Date,
+  excludeBookingId?: string,
+) {
+  return db
+    .select({
+      startsAt: bookings.startsAt,
+      endsAt: bookings.endsAt,
+      masterId: bookings.masterId,
+    })
+    .from(bookings)
+    .where(
+      and(
+        eq(bookings.vendorId, vendorId),
+        inArray(bookings.status, ["pending", "confirmed"]),
+        lt(bookings.startsAt, to), // starts before the window ends …
+        gt(bookings.endsAt, from), // … and ends after it starts → overlaps
+        excludeBookingId ? ne(bookings.id, excludeBookingId) : undefined,
+      ),
+    );
 }
 
 /** A user's bookings with vendor/service/master, newest first. */
@@ -87,6 +124,49 @@ export async function getMerchantVendor(merchantId: string, vendorId: string) {
   return vendor ?? null;
 }
 
+/**
+ * All bookings across a merchant's vendors (the portal "Записи" inbox), newest
+ * first. Includes client contact, service, master, and the vendor (for its
+ * timezone). Bookings have no direct merchant link, so we scope by vendor ids.
+ */
+export async function getMerchantBookings(merchantId: string) {
+  const owned = await db
+    .select({ id: vendors.id })
+    .from(vendors)
+    .where(eq(vendors.merchantId, merchantId));
+  const vendorIds = owned.map((v) => v.id);
+  if (vendorIds.length === 0) return [];
+
+  return db.query.bookings.findMany({
+    where: (b, { inArray }) => inArray(b.vendorId, vendorIds),
+    with: {
+      vendor: { columns: { id: true, name: true, timezone: true } },
+      service: { columns: { name: true, durationMinutes: true } },
+      master: { columns: { name: true } },
+      user: {
+        columns: { firstName: true, lastName: true, username: true, phone: true },
+      },
+    },
+    orderBy: (b, { desc }) => [desc(b.startsAt)],
+  });
+}
+
+/** Count of bookings awaiting the merchant's action (pending), for the nav badge. */
+export async function getMerchantPendingCount(merchantId: string): Promise<number> {
+  const owned = await db
+    .select({ id: vendors.id })
+    .from(vendors)
+    .where(eq(vendors.merchantId, merchantId));
+  const vendorIds = owned.map((v) => v.id);
+  if (vendorIds.length === 0) return 0;
+
+  const rows = await db
+    .select({ id: bookings.id })
+    .from(bookings)
+    .where(and(inArray(bookings.vendorId, vendorIds), eq(bookings.status, "pending")));
+  return rows.length;
+}
+
 export type Category = Awaited<ReturnType<typeof getCategories>>[number];
 export type MerchantVendorListItem = Awaited<
   ReturnType<typeof getMerchantVendors>
@@ -100,3 +180,4 @@ export type BookingContext = NonNullable<
   Awaited<ReturnType<typeof getServiceBookingContext>>
 >;
 export type BookingItem = Awaited<ReturnType<typeof getUserBookings>>[number];
+export type MerchantBooking = Awaited<ReturnType<typeof getMerchantBookings>>[number];

@@ -5,7 +5,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "tsx db/migrate.ts && next build",
     "start": "next start",
     "lint": "eslint",
     "format": "prettier --write \"**/*.{ts,tsx}\"",
@@ -15,7 +15,8 @@
     "db:seed": "tsx db/seed.ts",
     "db:seed:demo": "tsx db/seed-demo.ts",
     "db:studio": "drizzle-kit studio",
-    "bot:setup": "tsx scripts/telegram-setup.ts"
+    "bot:setup": "tsx scripts/telegram-setup.ts",
+    "merchant": "tsx scripts/merchant-moderate.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",

@@ -2,6 +2,7 @@ import { notFound } from "next/navigation"
 import { connection } from "next/server"
 
 import { getServiceBookingContext } from "@/db/queries"
+import { getCurrentUser } from "@/lib/auth"
 import { BookingFlow } from "@/components/marketplace/booking-flow"
 
 export default async function BookPage({
@@ -14,10 +15,18 @@ export default async function BookPage({
   await connection()
   const { id, serviceId } = await params
   const { reschedule } = await searchParams
-  const ctx = await getServiceBookingContext(id, serviceId)
+  const [ctx, user] = await Promise.all([
+    getServiceBookingContext(id, serviceId),
+    getCurrentUser(),
+  ])
   if (!ctx) notFound()
 
   return (
-    <BookingFlow vendor={ctx.vendor} service={ctx.service} rescheduleId={reschedule} />
+    <BookingFlow
+      vendor={ctx.vendor}
+      service={ctx.service}
+      rescheduleId={reschedule}
+      initialPhone={user?.phone ?? undefined}
+    />
   )
 }

@@ -5,12 +5,17 @@ import Link from "next/link"
 import { CheckCircle2, ChevronLeft } from "lucide-react"
 
 import type { BookingContext } from "@/db/queries"
-import { computeSlots } from "@/lib/slots"
 import { formatDuration, formatPrice } from "@/lib/format"
-import { authenticate, createBooking, rescheduleBooking } from "@/app/actions"
+import {
+  authenticate,
+  createBooking,
+  getAvailableSlots,
+  rescheduleBooking,
+} from "@/app/actions"
 import { getInitData } from "@/components/telegram-init"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
 import {
   Empty,
   EmptyDescription,
@@ -56,10 +61,12 @@ export function BookingFlow({
   vendor,
   service,
   rescheduleId,
+  initialPhone,
 }: {
   vendor: BookingContext["vendor"]
   service: BookingContext["service"]
   rescheduleId?: string
+  initialPhone?: string
 }) {
   const days = React.useMemo(() => buildDays(DAY_COUNT), [])
   const hasMasters = vendor.masters.length > 0
@@ -67,6 +74,9 @@ export function BookingFlow({
   const [master, setMaster] = React.useState("any")
   const [date, setDate] = React.useState(() => isoDate(days[0]))
   const [time, setTime] = React.useState<string | null>(null)
+  const [phone, setPhone] = React.useState(initialPhone ?? "")
+  const [slots, setSlots] = React.useState<string[]>([])
+  const [slotsLoading, setSlotsLoading] = React.useState(true)
   const [pending, startTransition] = React.useTransition()
   const [error, setError] = React.useState<string | null>(null)
   const [bookingRef, setBookingRef] = React.useState<{
@@ -74,37 +84,73 @@ export function BookingFlow({
     status: string
   } | null>(null)
 
-  const slots = React.useMemo(
-    () =>
-      computeSlots(
-        new Date(`${date}T00:00:00`),
-        vendor.workingHours,
-        service.durationMinutes,
-      ),
-    [date, vendor.workingHours, service.durationMinutes],
-  )
+  // Slots are computed on the server (working hours − already-booked ranges, in
+  // the vendor's timezone) so the list and the booking write can't disagree.
+  const loadSlots = React.useCallback(() => {
+    let active = true
+    setSlotsLoading(true)
+    const masterId = master === "any" ? null : master
+    getAvailableSlots({
+      vendorId: vendor.id,
+      serviceId: service.id,
+      masterId,
+      date,
+      excludeBookingId: rescheduleId,
+    })
+      .then((result) => {
+        if (!active) return
+        setSlots(result)
+        // Drop a held time if it's no longer offered for the new date/master.
+        setTime((cur) => (cur && result.includes(cur) ? cur : null))
+      })
+      .catch(() => active && setSlots([]))
+      .finally(() => active && setSlotsLoading(false))
+    return () => {
+      active = false
+    }
+  }, [vendor.id, service.id, date, master, rescheduleId])
 
-  // Changing the date clears the time so we never hold a slot from another day.
-  function selectDate(next: string) {
-    setDate(next)
-    setTime(null)
+  // A genuine data-fetch effect; the loading flag it sets is intentional.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  React.useEffect(() => loadSlots(), [loadSlots])
+
+  // Backfill the phone once the session warms and the server passes it (a cold
+  // deep-link open renders before auth completes). Never clobbers user edits.
+  React.useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (initialPhone) setPhone((cur) => cur || initialPhone)
+  }, [initialPhone])
+
+  // Convenience: let the user share their Telegram phone instead of typing it.
+  const canShareContact =
+    typeof window !== "undefined" && Boolean(window.Telegram?.WebApp?.requestContact)
+  function shareContact() {
+    window.Telegram?.WebApp?.requestContact?.((shared, response) => {
+      const num = response?.responseUnsafe?.contact?.phone_number
+      if (shared && num) setPhone(num)
+    })
   }
 
   function confirm() {
     if (!time || pending) return
+    if (!phone.trim()) {
+      setError("Укажите номер телефона — он нужен партнёру для связи.")
+      return
+    }
     setError(null)
     const masterId = master === "any" ? null : master
-    const startsAt = new Date(`${date}T${time}:00`).toISOString()
     const whenText = `${fullDateFmt.format(selectedDay)}, ${time}`
     const submit = () =>
       rescheduleId
-        ? rescheduleBooking({ bookingId: rescheduleId, masterId, startsAt, whenText })
+        ? rescheduleBooking({ bookingId: rescheduleId, masterId, date, time, whenText, phone })
         : createBooking({
             vendorId: vendor.id,
             serviceId: service.id,
             masterId,
-            startsAt,
+            date,
+            time,
             whenText,
+            phone,
           })
 
     startTransition(async () => {
@@ -116,6 +162,19 @@ export function BookingFlow({
       }
       if (result.ok) {
         setBookingRef({ id: result.bookingId, status: result.status })
+      } else if (result.error === "slot_taken") {
+        setError("Это время только что заняли. Выберите другое.")
+        loadSlots()
+      } else if (result.error === "in_past") {
+        setError("Это время уже прошло. Выберите другое.")
+        loadSlots()
+      } else if (result.error === "unavailable") {
+        setError("Это время недоступно. Выберите другое.")
+        loadSlots()
+      } else if (result.error === "phone_required") {
+        setError("Укажите номер телефона — он нужен партнёру для связи.")
+      } else if (result.error === "rate_limited") {
+        setError("Слишком много попыток. Подождите немного и попробуйте снова.")
       } else {
         setError("Не удалось сохранить запись. Попробуйте ещё раз.")
       }
@@ -219,7 +278,7 @@ export function BookingFlow({
           <ToggleGroup
             variant="outline"
             value={[date]}
-            onValueChange={(value) => selectDate((value[0] as string) ?? isoDate(days[0]))}
+            onValueChange={(value) => setDate((value[0] as string) ?? isoDate(days[0]))}
             className="w-max"
           >
             {days.map((d, i) => (
@@ -238,7 +297,9 @@ export function BookingFlow({
 
       <section className="flex flex-col gap-2">
         <h2 className="text-sm font-medium">Время</h2>
-        {slots.length === 0 ? (
+        {slotsLoading ? (
+          <p className="text-sm text-muted-foreground">Загружаем свободное время…</p>
+        ) : slots.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             В этот день нет свободного времени.
           </p>
@@ -258,6 +319,24 @@ export function BookingFlow({
         )}
       </section>
 
+      <section className="flex flex-col gap-2">
+        <h2 className="text-sm font-medium">Телефон для связи</h2>
+        <div className="flex gap-2">
+          <Input
+            type="tel"
+            inputMode="tel"
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+            placeholder="+998 90 123 45 67"
+          />
+          {canShareContact ? (
+            <Button variant="outline" type="button" onClick={shareContact}>
+              Из Telegram
+            </Button>
+          ) : null}
+        </div>
+      </section>
+
       {summary}
 
       <div className="fixed inset-x-0 bottom-0 border-t bg-background/95 backdrop-blur">
@@ -268,10 +347,16 @@ export function BookingFlow({
           <Button
             size="lg"
             className="w-full"
-            disabled={!time || pending}
+            disabled={!time || !phone.trim() || pending}
             onClick={confirm}
           >
-            {pending ? "Создаём бронь…" : time ? "Записаться" : "Выберите время"}
+            {pending
+              ? "Создаём бронь…"
+              : !time
+                ? "Выберите время"
+                : !phone.trim()
+                  ? "Укажите телефон"
+                  : "Записаться"}
           </Button>
         </div>
       </div>

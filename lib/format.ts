@@ -10,6 +10,18 @@ export function formatPriceFrom(minorUnits: number | null): string | null {
   return price ? `от ${price}` : null
 }
 
+/** Formats an absolute instant in a given IANA timezone (ru-RU, e.g. for the vendor's zone). */
+export function formatDateTimeInTz(date: Date, timeZone: string): string {
+  return new Intl.DateTimeFormat("ru-RU", {
+    timeZone,
+    weekday: "short",
+    day: "numeric",
+    month: "long",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date)
+}
+
 export function formatDuration(minutes: number): string {
   if (minutes < 60) return `${minutes} мин`
   const hours = Math.floor(minutes / 60)

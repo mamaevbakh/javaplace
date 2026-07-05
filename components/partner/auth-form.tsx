@@ -17,6 +17,8 @@ import { Input } from "@/components/ui/input"
 function errorText(error?: string): string {
   if (error === "exists") return "Такой email уже зарегистрирован."
   if (error === "weak") return "Пароль слишком короткий (минимум 8 символов)."
+  if (error === "rate_limited")
+    return "Слишком много попыток. Попробуйте через несколько минут."
   return "Неверный email или пароль."
 }
 

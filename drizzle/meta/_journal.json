@@ -22,6 +22,34 @@
       "when": 1783182635850,
       "tag": "0002_worthless_wild_child",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1783183927852,
+      "tag": "0003_vendor_timezone",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1783185546366,
+      "tag": "0004_merchant_telegram",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1783186064611,
+      "tag": "0005_merchant_moderation",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1783187014774,
+      "tag": "0006_rate_limits",
+      "breakpoints": true
     }
   ]
 }

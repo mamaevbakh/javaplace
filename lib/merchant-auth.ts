@@ -6,6 +6,43 @@ import {
   getMerchantSession,
   setMerchantSession,
 } from "./session"
+import { clientIp, rateLimit } from "./rate-limit"
+import { isBotConfigured, sendMessage } from "./telegram-api"
+
+/** Pings the admin chat with Approve/Reject buttons for a new signup. Best-effort. */
+async function notifyAdminNewMerchant(
+  id: string,
+  email: string,
+  name: string | null,
+): Promise<void> {
+  const adminChat = process.env.ADMIN_TELEGRAM_CHAT_ID
+  if (!adminChat || !isBotConfigured()) return
+  try {
+    await sendMessage(
+      adminChat,
+      [
+        "🆕 <b>Новая заявка партнёра</b>",
+        "",
+        name ? `<b>${name}</b>` : null,
+        `✉️ ${email}`,
+        "",
+        "Одобрить доступ к публикации в приложении?",
+      ]
+        .filter(Boolean)
+        .join("\n"),
+      {
+        inline_keyboard: [
+          [
+            { text: "✅ Одобрить", callback_data: `merch_approve_${id}` },
+            { text: "❌ Отклонить", callback_data: `merch_reject_${id}` },
+          ],
+        ],
+      },
+    )
+  } catch (error) {
+    console.error("[merchant register] admin notify failed:", error)
+  }
+}
 
 function hashPassword(password: string): string {
   const salt = crypto.randomBytes(16).toString("hex")
@@ -25,7 +62,7 @@ function verifyPassword(password: string, stored: string): boolean {
 
 export type MerchantAuthResult =
   | { ok: true }
-  | { ok: false; error: "exists" | "invalid" | "weak" }
+  | { ok: false; error: "exists" | "invalid" | "weak" | "rate_limited" }
 
 export async function registerMerchant(
   email: string,
@@ -33,6 +70,11 @@ export async function registerMerchant(
   name: string,
 ): Promise<MerchantAuthResult> {
   const normalized = email.trim().toLowerCase()
+  // Cap signups per IP so spam registrations can't flood the admin review queue.
+  const ip = await clientIp()
+  if (!(await rateLimit(`register-ip:${ip}`, 5, 3600)).ok) {
+    return { ok: false, error: "rate_limited" }
+  }
   if (password.length < 8) return { ok: false, error: "weak" }
 
   const existing = await db.query.merchants.findFirst({
@@ -40,12 +82,20 @@ export async function registerMerchant(
   })
   if (existing) return { ok: false, error: "exists" }
 
+  const cleanName = name.trim() || null
   const [merchant] = await db
     .insert(merchants)
-    .values({ email: normalized, passwordHash: hashPassword(password), name: name.trim() || null })
+    .values({
+      email: normalized,
+      passwordHash: hashPassword(password),
+      name: cleanName,
+      status: "pending", // awaits admin approval before vendors go public
+    })
     .returning({ id: merchants.id })
 
+  // Let the new merchant in to prepare their profile; nothing is public yet.
   await setMerchantSession(merchant.id)
+  await notifyAdminNewMerchant(merchant.id, normalized, cleanName)
   return { ok: true }
 }
 
@@ -54,6 +104,14 @@ export async function loginMerchant(
   password: string,
 ): Promise<MerchantAuthResult> {
   const normalized = email.trim().toLowerCase()
+  // Throttle brute force: per IP (broad) and per account (targeted).
+  const ip = await clientIp()
+  if (!(await rateLimit(`login-ip:${ip}`, 10, 600)).ok) {
+    return { ok: false, error: "rate_limited" }
+  }
+  if (!(await rateLimit(`login-email:${normalized}`, 5, 600)).ok) {
+    return { ok: false, error: "rate_limited" }
+  }
   const merchant = await db.query.merchants.findFirst({
     where: (m, { eq }) => eq(m.email, normalized),
   })

@@ -42,6 +42,14 @@ export const bookingStatus = pgEnum("booking_status", [
 
 export const serviceGender = pgEnum("service_gender", ["male", "female", "unisex"]);
 
+// Merchant moderation: new signups are "pending" until an admin approves them;
+// their vendors stay out of the public marketplace until then.
+export const merchantStatus = pgEnum("merchant_status", [
+  "pending",
+  "approved",
+  "rejected",
+]);
+
 export const discountType = pgEnum("discount_type", ["percent", "fixed"]);
 
 // ---------------------------------------------------------------------------
@@ -79,6 +87,9 @@ export const merchants = pgTable("merchants", {
   email: text("email").notNull().unique(),
   passwordHash: text("password_hash").notNull(),
   name: text("name"),
+  status: merchantStatus("status").notNull().default("pending"),
+  // Telegram chat to push new-booking alerts to (opt-in via the portal link flow).
+  telegramChatId: bigint("telegram_chat_id", { mode: "number" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -99,6 +110,9 @@ export const vendors = pgTable(
     address: text("address"),
     latitude: doublePrecision("latitude"),
     longitude: doublePrecision("longitude"),
+    // IANA timezone (e.g. "Asia/Tashkent"). Working hours + slots are wall-clock
+    // times interpreted in this zone; bookings are stored as absolute instants.
+    timezone: text("timezone").notNull().default("Asia/Tashkent"),
     phone: text("phone"),
     coverUrl: text("cover_url"),
     ratingAvg: numeric("rating_avg", { precision: 2, scale: 1 }).notNull().default("0"),
@@ -301,6 +315,15 @@ export const promotions = pgTable("promotions", {
   startsAt: timestamp("starts_at", { withTimezone: true }),
   endsAt: timestamp("ends_at", { withTimezone: true }),
   isActive: boolean("is_active").notNull().default(true),
+});
+
+// ---------------------------------------------------------------------------
+// Rate limiting (DB-backed fixed window; shared across serverless instances)
+// ---------------------------------------------------------------------------
+export const rateLimits = pgTable("rate_limits", {
+  key: text("key").primaryKey(), // e.g. "login-ip:1.2.3.4", "booking:<userId>"
+  count: integer("count").notNull().default(0),
+  resetAt: timestamp("reset_at", { withTimezone: true }).notNull(),
 });
 
 // ---------------------------------------------------------------------------

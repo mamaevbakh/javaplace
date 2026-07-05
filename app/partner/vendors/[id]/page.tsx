@@ -67,6 +67,7 @@ export default async function EditVendorPage({
             coverUrl: vendor.coverUrl,
             latitude: vendor.latitude,
             longitude: vendor.longitude,
+            timezone: vendor.timezone,
           }}
         />
       </section>

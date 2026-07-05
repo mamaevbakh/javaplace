@@ -6,13 +6,16 @@ import { and, eq } from "drizzle-orm"
 import { del } from "@vercel/blob"
 
 import {
+  bookings,
   db,
   masters,
+  merchants,
   services,
   vendorPhotos,
   vendors,
   vendorWorkingHours,
 } from "@/db"
+import { formatDateTimeInTz } from "@/lib/format"
 import {
   getCurrentMerchant,
   loginMerchant,
@@ -20,6 +23,8 @@ import {
   registerMerchant,
   type MerchantAuthResult,
 } from "@/lib/merchant-auth"
+import { merchantLinkToken } from "@/lib/link-token"
+import { getMe, isBotConfigured, sendMessage } from "@/lib/telegram-api"
 import type {
   MasterInput,
   ServiceInput,
@@ -95,6 +100,7 @@ export async function createVendorAction(
       latitude: input.latitude,
       longitude: input.longitude,
       coverUrl: input.coverUrl.trim() || null,
+      timezone: input.timezone,
       isActive: input.isActive,
     })
     .returning({ id: vendors.id })
@@ -129,6 +135,7 @@ export async function updateVendorAction(
       latitude: input.latitude,
       longitude: input.longitude,
       coverUrl: input.coverUrl.trim() || null,
+      timezone: input.timezone,
       isActive: input.isActive,
       updatedAt: new Date(),
     })
@@ -341,5 +348,115 @@ export async function deleteVendorPhotoAction(
   }
   revalidatePath(`/partner/vendors/${photo.vendorId}`)
   revalidatePath(`/vendor/${photo.vendorId}`)
+  return { ok: true }
+}
+
+// --- Telegram notifications (merchant opt-in) ---
+
+/** Deep link the merchant opens to connect their Telegram for booking alerts. */
+export async function getTelegramConnectLink(): Promise<
+  { ok: true; url: string } | { ok: false; error: "not_configured" | "unknown" }
+> {
+  const merchant = await requireMerchant()
+  if (!isBotConfigured()) return { ok: false, error: "not_configured" }
+  try {
+    const me = await getMe()
+    if (!me.username) return { ok: false, error: "unknown" }
+    const token = merchantLinkToken(merchant.id)
+    return { ok: true, url: `https://t.me/${me.username}?start=${token}` }
+  } catch (error) {
+    console.error("[telegram connect] getMe failed:", error)
+    return { ok: false, error: "unknown" }
+  }
+}
+
+/** Stop sending Telegram alerts to this merchant. */
+export async function disconnectTelegramAction(): Promise<{ ok: boolean }> {
+  const merchant = await requireMerchant()
+  await db
+    .update(merchants)
+    .set({ telegramChatId: null, updatedAt: new Date() })
+    .where(eq(merchants.id, merchant.id))
+  revalidatePath("/partner")
+  return { ok: true }
+}
+
+// --- Bookings (partner inbox / lifecycle) ---
+
+type BookingStatus = "pending" | "confirmed" | "cancelled" | "completed" | "no_show"
+export type BookingAction = "confirm" | "decline" | "complete" | "no_show"
+
+// Legal transitions the merchant may drive. "decline" is a partner-side
+// cancellation (we reuse `cancelled` — there is no separate `declined` status).
+const TRANSITIONS: Record<BookingAction, { from: BookingStatus[]; to: BookingStatus }> = {
+  confirm: { from: ["pending"], to: "confirmed" },
+  decline: { from: ["pending", "confirmed"], to: "cancelled" },
+  complete: { from: ["confirmed"], to: "completed" },
+  no_show: { from: ["confirmed"], to: "no_show" },
+}
+
+export async function updateBookingStatusAction(
+  bookingId: string,
+  action: BookingAction,
+): Promise<{ ok: boolean; error?: "not_found" | "invalid_transition" }> {
+  const merchant = await requireMerchant()
+
+  const booking = await db.query.bookings.findFirst({
+    where: (b, { eq }) => eq(b.id, bookingId),
+    with: {
+      vendor: {
+        columns: { merchantId: true, name: true, address: true, timezone: true },
+      },
+      service: { columns: { name: true } },
+      user: { columns: { telegramId: true } },
+    },
+  })
+  if (!booking || booking.vendor.merchantId !== merchant.id) {
+    return { ok: false, error: "not_found" }
+  }
+
+  const transition = TRANSITIONS[action]
+  if (!transition.from.includes(booking.status)) {
+    return { ok: false, error: "invalid_transition" }
+  }
+
+  await db
+    .update(bookings)
+    .set({ status: transition.to, updatedAt: new Date() })
+    .where(eq(bookings.id, bookingId))
+  revalidatePath("/partner/bookings")
+
+  // Tell the client when the partner confirms or declines. Best-effort.
+  if (isBotConfigured() && (action === "confirm" || action === "decline")) {
+    try {
+      const when = formatDateTimeInTz(booking.startsAt, booking.vendor.timezone)
+      const ref = `#${booking.id.slice(0, 8).toUpperCase()}`
+      const text =
+        action === "confirm"
+          ? [
+              "✅ <b>Запись подтверждена!</b>",
+              "",
+              `<b>${booking.service.name}</b>`,
+              `📍 ${booking.vendor.name}${booking.vendor.address ? `, ${booking.vendor.address}` : ""}`,
+              `🗓 ${when}`,
+              "",
+              `Номер брони: <b>${ref}</b>`,
+              "Ждём вас!",
+            ].join("\n")
+          : [
+              "❌ <b>Запись отклонена</b>",
+              "",
+              `<b>${booking.service.name}</b>`,
+              `📍 ${booking.vendor.name}`,
+              `🗓 ${when}`,
+              "",
+              "К сожалению, партнёр не смог принять запись на это время. Выберите, пожалуйста, другое время.",
+            ].join("\n")
+      await sendMessage(booking.user.telegramId, text)
+    } catch (error) {
+      console.error("[booking status] client notify failed:", error)
+    }
+  }
+
   return { ok: true }
 }

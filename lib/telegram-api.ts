@@ -49,6 +49,24 @@ export function answerCallbackQuery(callbackQueryId: string, text?: string) {
   return call("answerCallbackQuery", { callback_query_id: callbackQueryId, text })
 }
 
+export function editMessageText(
+  chatId: number | string,
+  messageId: number,
+  text: string,
+) {
+  return call("editMessageText", {
+    chat_id: chatId,
+    message_id: messageId,
+    text,
+    parse_mode: "HTML",
+    link_preview_options: { is_disabled: true },
+  })
+}
+
+export function getMe() {
+  return call<{ id: number; username?: string; first_name: string }>("getMe")
+}
+
 export function setWebhook(url: string, secretToken: string) {
   return call("setWebhook", {
     url,

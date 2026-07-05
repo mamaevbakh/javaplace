@@ -1,5 +1,9 @@
+import { db, merchants } from "@/db"
+import { eq } from "drizzle-orm"
+import { verifyMerchantLinkToken } from "@/lib/link-token"
 import {
   answerCallbackQuery,
+  editMessageText,
   isBotConfigured,
   sendMessage,
   type InlineKeyboard,
@@ -10,7 +14,85 @@ type TelegramUpdate = {
   callback_query?: {
     id: string
     data?: string
-    message?: { chat?: { id: number } }
+    from?: { id: number }
+    message?: { chat?: { id: number }; message_id?: number }
+  }
+}
+
+/** Links the Telegram chat that pressed Start to a merchant, if the token is valid. */
+async function tryLinkMerchant(chatId: number, startPayload: string): Promise<boolean> {
+  const merchantId = verifyMerchantLinkToken(startPayload)
+  if (!merchantId) return false
+  const [updated] = await db
+    .update(merchants)
+    .set({ telegramChatId: chatId, updatedAt: new Date() })
+    .where(eq(merchants.id, merchantId))
+    .returning({ id: merchants.id })
+  if (!updated) return false
+  await sendMessage(
+    chatId,
+    "✅ <b>Уведомления подключены</b>\n\nТеперь вы будете получать сюда новые заявки на бронь. Отключить можно в портале партнёра.",
+  )
+  return true
+}
+
+function isAdminChat(id: number | undefined): boolean {
+  const admin = process.env.ADMIN_TELEGRAM_CHAT_ID
+  return Boolean(admin && id != null && String(id) === admin)
+}
+
+/** Handles the admin's Approve/Reject taps on a new-merchant signup. */
+async function handleMerchantModeration(
+  cq: NonNullable<TelegramUpdate["callback_query"]>,
+): Promise<void> {
+  const match = /^merch_(approve|reject)_(.+)$/.exec(cq.data ?? "")
+  if (!match) return
+  // Only the configured admin may moderate.
+  if (!isAdminChat(cq.from?.id) && !isAdminChat(cq.message?.chat?.id)) {
+    await answerCallbackQuery(cq.id, "Недостаточно прав")
+    return
+  }
+
+  const [, action, merchantId] = match
+  const status = action === "approve" ? "approved" : "rejected"
+  const [updated] = await db
+    .update(merchants)
+    .set({ status, updatedAt: new Date() })
+    .where(eq(merchants.id, merchantId))
+    .returning({
+      name: merchants.name,
+      email: merchants.email,
+      telegramChatId: merchants.telegramChatId,
+    })
+
+  if (!updated) {
+    await answerCallbackQuery(cq.id, "Партнёр не найден")
+    return
+  }
+  await answerCallbackQuery(cq.id, action === "approve" ? "Одобрено ✅" : "Отклонено ❌")
+
+  // Reflect the decision on the admin message (drops the buttons).
+  const chatId = cq.message?.chat?.id
+  if (chatId && cq.message?.message_id) {
+    const label = action === "approve" ? "✅ Одобрено" : "❌ Отклонено"
+    await editMessageText(
+      chatId,
+      cq.message.message_id,
+      `${label}\n\n${updated.name ?? updated.email}`,
+    )
+  }
+
+  // If the merchant has connected Telegram, tell them the outcome.
+  if (updated.telegramChatId) {
+    const msg =
+      action === "approve"
+        ? "✅ <b>Ваш аккаунт одобрен!</b>\n\nПрофили теперь видны в приложении."
+        : "❌ <b>Заявка отклонена</b>\n\nЕсли это ошибка, напишите в поддержку: support@javaplace.app"
+    try {
+      await sendMessage(updated.telegramChatId, msg)
+    } catch (error) {
+      console.error("[moderation] merchant notify failed:", error)
+    }
   }
 }
 
@@ -43,10 +125,16 @@ function appOrigin(req: Request): string {
 async function handleUpdate(update: TelegramUpdate, appUrl: string): Promise<void> {
   if (update.message?.text) {
     const chatId = update.message.chat.id
-    const command = update.message.text.trim().split(/\s+/)[0].replace(/@.*$/, "")
+    const parts = update.message.text.trim().split(/\s+/)
+    const command = parts[0].replace(/@.*$/, "")
+    const startPayload = parts[1]
 
     switch (command) {
       case "/start":
+        // Deep link from the portal to connect merchant notifications.
+        if (startPayload && (await tryLinkMerchant(chatId, startPayload))) break
+        await sendMessage(chatId, WELCOME, mainMenu(appUrl))
+        break
       case "/menu":
         await sendMessage(chatId, WELCOME, mainMenu(appUrl))
         break
@@ -60,6 +148,10 @@ async function handleUpdate(update: TelegramUpdate, appUrl: string): Promise<voi
       case "/help":
         await sendMessage(chatId, HELP)
         break
+      case "/id":
+        // Helper for setting ADMIN_TELEGRAM_CHAT_ID during setup.
+        await sendMessage(chatId, `Ваш chat id: <code>${chatId}</code>`)
+        break
       case "/support":
         await sendMessage(chatId, SUPPORT)
         break
@@ -71,6 +163,10 @@ async function handleUpdate(update: TelegramUpdate, appUrl: string): Promise<voi
 
   if (update.callback_query) {
     const cq = update.callback_query
+    if (cq.data?.startsWith("merch_")) {
+      await handleMerchantModeration(cq)
+      return
+    }
     await answerCallbackQuery(cq.id)
     const chatId = cq.message?.chat?.id
     if (!chatId) return

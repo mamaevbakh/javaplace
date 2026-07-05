@@ -4,7 +4,11 @@ import * as React from "react"
 import { useRouter } from "next/navigation"
 
 import type { Category } from "@/db/queries"
-import type { VendorInput } from "@/lib/partner-types"
+import {
+  DEFAULT_TIMEZONE,
+  TIMEZONE_OPTIONS,
+  type VendorInput,
+} from "@/lib/partner-types"
 import { createVendorAction, updateVendorAction } from "@/app/partner/actions"
 import { Button } from "@/components/ui/button"
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field"
@@ -28,6 +32,7 @@ type VendorInitial = {
   coverUrl: string | null
   latitude: number | null
   longitude: number | null
+  timezone: string | null
 }
 
 export function VendorForm({
@@ -50,6 +55,7 @@ export function VendorForm({
   const [coverUrl, setCoverUrl] = React.useState(initial?.coverUrl ?? "")
   const [lat, setLat] = React.useState(initial?.latitude != null ? String(initial.latitude) : "")
   const [lng, setLng] = React.useState(initial?.longitude != null ? String(initial.longitude) : "")
+  const [timezone, setTimezone] = React.useState(initial?.timezone ?? DEFAULT_TIMEZONE)
 
   function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -67,6 +73,7 @@ export function VendorForm({
       coverUrl,
       latitude: lat.trim() ? Number(lat) : null,
       longitude: lng.trim() ? Number(lng) : null,
+      timezone,
       isActive: true,
     }
     startTransition(async () => {
@@ -144,6 +151,27 @@ export function VendorForm({
             <Input id="v-lng" value={lng} onChange={(e) => setLng(e.target.value)} placeholder="37.6173" inputMode="decimal" />
           </Field>
         </div>
+        <Field>
+          <FieldLabel>Часовой пояс</FieldLabel>
+          <Select
+            value={timezone}
+            onValueChange={(value) => setTimezone((value as string) ?? DEFAULT_TIMEZONE)}
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder="Выберите часовой пояс" />
+            </SelectTrigger>
+            <SelectContent>
+              {TIMEZONE_OPTIONS.map((tz) => (
+                <SelectItem key={tz.value} value={tz.value}>
+                  {tz.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <FieldDescription>
+            Время и свободные слоты показываются в этом поясе.
+          </FieldDescription>
+        </Field>
       </FieldGroup>
 
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
