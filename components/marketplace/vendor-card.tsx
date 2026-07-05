@@ -12,7 +12,7 @@ export function VendorCard({ vendor }: { vendor: VendorListItem }) {
   return (
     <Link href={`/vendor/${vendor.id}`} className="block">
       <Card className="gap-3 pt-0 transition-shadow hover:ring-foreground/20">
-        <div className="flex aspect-[5/2] items-center justify-center bg-muted text-5xl">
+        <div className="flex h-20 items-center justify-center bg-muted text-4xl">
           {vendor.coverUrl ?? "🏬"}
         </div>
 
