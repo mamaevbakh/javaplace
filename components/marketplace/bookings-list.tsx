@@ -7,7 +7,7 @@ import { CalendarClock, MapPin, RefreshCw } from "lucide-react"
 
 import type { BookingItem } from "@/db/queries"
 import { cancelBooking } from "@/app/actions"
-import { formatPrice } from "@/lib/format"
+import { formatDateTimeInTz, formatPrice } from "@/lib/format"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -21,14 +21,6 @@ const STATUS: Record<string, { label: string; variant: BadgeVariant }> = {
   completed: { label: "Завершена", variant: "outline" },
   no_show: { label: "Не пришли", variant: "destructive" },
 }
-
-const dateFmt = new Intl.DateTimeFormat("ru-RU", {
-  weekday: "short",
-  day: "numeric",
-  month: "long",
-  hour: "2-digit",
-  minute: "2-digit",
-})
 
 function isActive(b: BookingItem): boolean {
   return (
@@ -96,7 +88,9 @@ function BookingCard({ booking, active }: { booking: BookingItem; active: boolea
         </div>
         <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
           <CalendarClock className="size-3.5 shrink-0" />
-          <span className="capitalize">{dateFmt.format(new Date(booking.startsAt))}</span>
+          <span className="capitalize">
+            {formatDateTimeInTz(new Date(booking.startsAt), booking.vendor.timezone)}
+          </span>
         </div>
         <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
           <MapPin className="size-3.5 shrink-0" />

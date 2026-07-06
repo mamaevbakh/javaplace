@@ -1,11 +1,12 @@
 import Image from "next/image"
 import Link from "next/link"
-import { MapPin, Star } from "lucide-react"
+import { MapPin } from "lucide-react"
 
 import type { VendorListItem } from "@/db/queries"
 import { formatPriceFrom } from "@/lib/format"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { RatingBadge } from "./rating-badge"
 
 // Card spans the full mobile column up to the max-w-md (448px) content width.
 const COVER_SIZES = "(max-width: 448px) 100vw, 416px"
@@ -34,10 +35,7 @@ export function VendorCard({ vendor }: { vendor: VendorListItem }) {
         <CardHeader>
           <div className="flex items-start justify-between gap-2">
             <CardTitle className="truncate">{vendor.name}</CardTitle>
-            <Badge variant="secondary">
-              <Star className="fill-current" />
-              {vendor.ratingAvg}
-            </Badge>
+            <RatingBadge ratingAvg={vendor.ratingAvg} ratingCount={vendor.ratingCount} />
           </div>
           {vendor.category ? (
             <Badge variant="outline">

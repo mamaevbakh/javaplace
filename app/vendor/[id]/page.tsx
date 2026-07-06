@@ -1,7 +1,7 @@
 import { Suspense } from "react"
 import Link from "next/link"
 import { notFound } from "next/navigation"
-import { ChevronLeft, ChevronRight, Clock, MapPin, Navigation, Phone, Star } from "lucide-react"
+import { ChevronLeft, ChevronRight, Clock, MapPin, Navigation, Phone } from "lucide-react"
 
 import { getVendorById } from "@/db/queries"
 import { formatDuration, formatPrice, formatWorkingHours } from "@/lib/format"
@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
 import { PhotoCarousel } from "@/components/marketplace/photo-carousel"
+import { RatingBadge } from "@/components/marketplace/rating-badge"
 
 export default function VendorPage({
   params,
@@ -73,10 +74,7 @@ async function VendorContent({ params }: { params: Promise<{ id: string }> }) {
       <header className="flex flex-col gap-2">
         <div className="flex items-start justify-between gap-2">
           <h1 className="font-heading text-xl font-semibold">{vendor.name}</h1>
-          <Badge variant="secondary">
-            <Star className="fill-current" />
-            {vendor.ratingAvg}
-          </Badge>
+          <RatingBadge ratingAvg={vendor.ratingAvg} ratingCount={vendor.ratingCount} />
         </div>
         {vendor.category ? (
           <Badge variant="outline" className="w-fit">
