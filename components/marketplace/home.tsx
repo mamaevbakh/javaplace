@@ -92,6 +92,17 @@ export function Home({
               Попробуйте изменить запрос или выбрать другую категорию.
             </EmptyDescription>
           </EmptyHeader>
+          {query || activeCategory !== "all" ? (
+            <Button
+              variant="outline"
+              onClick={() => {
+                setQuery("")
+                setActiveCategory("all")
+              }}
+            >
+              Сбросить фильтры
+            </Button>
+          ) : null}
         </Empty>
       ) : (
         <section className="flex flex-col gap-3">

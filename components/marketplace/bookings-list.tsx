@@ -61,6 +61,7 @@ function BookingCard({ booking, active }: { booking: BookingItem; active: boolea
   const router = useRouter()
   const [pending, startTransition] = React.useTransition()
   const [confirming, setConfirming] = React.useState(false)
+  const [cancelError, setCancelError] = React.useState(false)
 
   const status = STATUS[booking.status] ?? {
     label: booking.status,
@@ -72,10 +73,15 @@ function BookingCard({ booking, active }: { booking: BookingItem; active: boolea
       : null
 
   function cancel() {
+    setCancelError(false)
     startTransition(async () => {
-      await cancelBooking(booking.id)
-      setConfirming(false)
-      router.refresh()
+      const res = await cancelBooking(booking.id)
+      if (res.ok) {
+        setConfirming(false)
+        router.refresh()
+      } else {
+        setCancelError(true)
+      }
     })
   }
 
@@ -105,20 +111,27 @@ function BookingCard({ booking, active }: { booking: BookingItem; active: boolea
 
         {active ? (
           confirming ? (
-            <div className="flex items-center gap-2 border-t pt-2">
-              <span className="text-sm">Отменить запись?</span>
-              <Button
-                variant="destructive"
-                size="sm"
-                disabled={pending}
-                onClick={cancel}
-                className="ml-auto"
-              >
-                Да, отменить
-              </Button>
-              <Button variant="ghost" size="sm" onClick={() => setConfirming(false)}>
-                Нет
-              </Button>
+            <div className="flex flex-col gap-1 border-t pt-2">
+              <div className="flex items-center gap-2">
+                <span className="text-sm">Отменить запись?</span>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  disabled={pending}
+                  onClick={cancel}
+                  className="ml-auto"
+                >
+                  Да, отменить
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => setConfirming(false)}>
+                  Нет
+                </Button>
+              </div>
+              {cancelError ? (
+                <span className="text-xs text-destructive">
+                  Не удалось отменить. Попробуйте ещё раз.
+                </span>
+              ) : null}
             </div>
           ) : (
             <div className="flex flex-wrap gap-2 border-t pt-2">

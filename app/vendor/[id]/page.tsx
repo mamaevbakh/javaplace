@@ -39,13 +39,34 @@ export default function VendorPage({
   )
 }
 
+// Mirrors the real VendorContent layout (cover, header, info, buttons, services)
+// so streaming the content in doesn't shift the page.
 function VendorSkeleton() {
   return (
-    <div className="flex flex-col gap-4">
-      <div className="aspect-video animate-pulse rounded-xl bg-muted" />
-      <div className="h-6 w-2/3 animate-pulse rounded bg-muted" />
-      <div className="h-4 w-1/2 animate-pulse rounded bg-muted" />
-      <div className="h-16 animate-pulse rounded bg-muted" />
+    <div className="flex animate-pulse flex-col gap-4">
+      <div className="aspect-video rounded-xl bg-muted" />
+      <div className="flex flex-col gap-2">
+        <div className="flex items-start justify-between gap-2">
+          <div className="h-6 w-1/2 rounded bg-muted" />
+          <div className="h-6 w-12 rounded bg-muted" />
+        </div>
+        <div className="h-5 w-28 rounded bg-muted" />
+        <div className="h-4 w-4/5 rounded bg-muted" />
+      </div>
+      <div className="flex flex-col gap-2">
+        <div className="h-4 w-2/3 rounded bg-muted" />
+        <div className="h-4 w-1/2 rounded bg-muted" />
+      </div>
+      <div className="flex gap-2">
+        <div className="h-9 flex-1 rounded-lg bg-muted" />
+        <div className="h-9 flex-1 rounded-lg bg-muted" />
+      </div>
+      <div className="h-px bg-border" />
+      <div className="h-5 w-24 rounded bg-muted" />
+      <div className="flex flex-col gap-3">
+        <div className="h-16 rounded-xl bg-muted" />
+        <div className="h-16 rounded-xl bg-muted" />
+      </div>
     </div>
   )
 }
