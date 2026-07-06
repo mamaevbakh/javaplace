@@ -2,10 +2,12 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { CheckCircle2, ChevronLeft } from "lucide-react"
+import { BellRing, CalendarPlus, CheckCircle2, ChevronLeft, ShieldCheck } from "lucide-react"
 
 import type { BookingContext } from "@/db/queries"
 import { formatDuration, formatPrice } from "@/lib/format"
+import { hapticImpact, hapticNotify, hapticSelect } from "@/lib/haptics"
+import { downloadBookingIcs } from "@/lib/ics"
 import {
   authenticate,
   createBooking,
@@ -26,6 +28,7 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
+import { Skeleton } from "@/components/ui/skeleton"
 
 const DAY_COUNT = 14
 
@@ -152,9 +155,19 @@ export function BookingFlow({
     if (initialPhone) setPhone((cur) => cur || initialPhone)
   }, [initialPhone])
 
+  // Telegram APIs only exist on the client. Reading them during render makes the
+  // server HTML (no window) disagree with the client (window present) → hydration
+  // mismatch. Gate anything window-dependent behind a mounted flag so the first
+  // client render matches the server, then reveals after mount.
+  const [mounted, setMounted] = React.useState(false)
+  React.useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setMounted(true)
+  }, [])
+
   // Convenience: let the user share their Telegram phone instead of typing it.
   const canShareContact =
-    typeof window !== "undefined" && Boolean(window.Telegram?.WebApp?.requestContact)
+    mounted && Boolean(window.Telegram?.WebApp?.requestContact)
   function shareContact() {
     window.Telegram?.WebApp?.requestContact?.((shared, response) => {
       const num = response?.responseUnsafe?.contact?.phone_number
@@ -166,6 +179,7 @@ export function BookingFlow({
   // so a booked-out day is never a dead end.
   function jumpToNextAvailable() {
     if (findingDate) return
+    hapticImpact("light")
     setFindingDate(true)
     const masterId = master === "any" ? null : master
     getNextAvailableDate({
@@ -214,8 +228,10 @@ export function BookingFlow({
         result = await submit()
       }
       if (result.ok) {
+        hapticNotify("success")
         setBookingRef({ id: result.bookingId, status: result.status })
       } else if (result.error === "slot_taken") {
+        hapticNotify("error")
         setError("Это время только что заняли. Выберите другое.")
         loadSlots()
       } else if (result.error === "in_past") {
@@ -281,10 +297,31 @@ export function BookingFlow({
         </Empty>
         {summary}
         <div className="flex flex-col gap-2">
+          <Button
+            variant="outline"
+            type="button"
+            onClick={() => {
+              if (!time) return
+              hapticImpact("light")
+              downloadBookingIcs({
+                bookingId: bookingRef.id,
+                serviceName: service.name,
+                vendorName: vendor.name,
+                address: vendor.address,
+                dateStr: date,
+                timeStr: time,
+                durationMinutes: service.durationMinutes,
+                timeZone: vendor.timezone,
+              })
+            }}
+          >
+            <CalendarPlus />
+            Добавить в календарь
+          </Button>
           <Button nativeButton={false} render={<Link href="/bookings" />}>
             Мои записи
           </Button>
-          <Button variant="outline" nativeButton={false} render={<Link href="/" />}>
+          <Button variant="ghost" nativeButton={false} render={<Link href="/" />}>
             На главную
           </Button>
         </div>
@@ -325,7 +362,10 @@ export function BookingFlow({
             <ToggleGroup
               variant="outline"
               value={[master]}
-              onValueChange={(value) => setMaster((value[0] as string) ?? "any")}
+              onValueChange={(value) => {
+                hapticSelect()
+                setMaster((value[0] as string) ?? "any")
+              }}
               className="w-max"
             >
               <ToggleGroupItem value="any">Любой мастер</ToggleGroupItem>
@@ -345,7 +385,10 @@ export function BookingFlow({
           <ToggleGroup
             variant="outline"
             value={[date]}
-            onValueChange={(value) => setDate((value[0] as string) ?? days[0])}
+            onValueChange={(value) => {
+              hapticSelect()
+              setDate((value[0] as string) ?? days[0])
+            }}
             className="w-max"
           >
             {days.map((iso, i) => (
@@ -367,7 +410,11 @@ export function BookingFlow({
       <section className="flex flex-col gap-2">
         <h2 className="text-sm font-medium">Время</h2>
         {slotsLoading ? (
-          <p className="text-sm text-muted-foreground">Загружаем свободное время…</p>
+          <div className="flex flex-wrap gap-2" aria-hidden="true">
+            {Array.from({ length: 10 }).map((_, i) => (
+              <Skeleton key={i} className="h-10 w-16 rounded-lg" />
+            ))}
+          </div>
         ) : slotsError ? (
           <div className="flex items-center gap-3">
             <p className="text-sm text-destructive">Не удалось загрузить время.</p>
@@ -403,7 +450,10 @@ export function BookingFlow({
                   <ToggleGroup
                     variant="outline"
                     value={time ? [time] : []}
-                    onValueChange={(value) => setTime((value[0] as string) ?? null)}
+                    onValueChange={(value) => {
+                      hapticSelect()
+                      setTime((value[0] as string) ?? null)
+                    }}
                     className="flex-wrap justify-start"
                   >
                     {groupSlots.map((slot) => (
@@ -452,6 +502,17 @@ export function BookingFlow({
           />
         </section>
       ) : null}
+
+      <div className="flex flex-col gap-2 rounded-lg border bg-muted/30 p-3 text-xs text-muted-foreground">
+        <span className="flex items-center gap-2">
+          <ShieldCheck className="size-4 shrink-0 text-emerald-500" />
+          Бесплатная отмена — в любой момент в «Мои записи»
+        </span>
+        <span className="flex items-center gap-2">
+          <BellRing className="size-4 shrink-0 text-emerald-500" />
+          Партнёр подтвердит запись — уведомим в Telegram
+        </span>
+      </div>
 
       {summary}
 

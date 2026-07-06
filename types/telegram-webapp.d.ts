@@ -21,6 +21,12 @@ interface TelegramWebApp {
   requestContact?: (
     callback?: (shared: boolean, response?: TelegramContactRequestedResponse) => void,
   ) => void
+  // Native haptics — makes chip taps / confirmation feel like an app, not a webview.
+  HapticFeedback?: {
+    impactOccurred?: (style: "light" | "medium" | "heavy" | "rigid" | "soft") => void
+    notificationOccurred?: (type: "error" | "success" | "warning") => void
+    selectionChanged?: () => void
+  }
 }
 
 interface Window {
