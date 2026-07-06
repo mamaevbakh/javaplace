@@ -27,20 +27,29 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 
 const DAY_COUNT = 14
 
-function buildDays(count: number): Date[] {
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  return Array.from({ length: count }, (_, i) => {
-    const d = new Date(today)
-    d.setDate(today.getDate() + i)
-    return d
-  })
+// The vendor's local calendar day ("YYYY-MM-DD"). The day strip must match the
+// timezone slots are computed in, not the viewer's device timezone — otherwise a
+// user abroad sees "Сегодня" for the wrong vendor-day (all-past slots / off-by-one).
+function vendorTodayIso(tz: string): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: tz,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date())
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "01"
+  return `${get("year")}-${get("month")}-${get("day")}`
 }
 
-function isoDate(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
-    d.getDate(),
-  ).padStart(2, "0")}`
+function addDaysIso(iso: string, n: number): string {
+  const [y, m, d] = iso.split("-").map(Number)
+  return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10)
+}
+
+// A Date at local noon of the calendar day — safe for weekday/day/month labels
+// (noon never crosses a day boundary under any timezone).
+function labelDate(iso: string): Date {
+  return new Date(`${iso}T12:00:00`)
 }
 
 const weekdayFmt = new Intl.DateTimeFormat("ru-RU", { weekday: "short" })
@@ -51,10 +60,10 @@ const fullDateFmt = new Intl.DateTimeFormat("ru-RU", {
   month: "long",
 })
 
-function dayTopLabel(d: Date, index: number): string {
+function dayTopLabel(iso: string, index: number): string {
   if (index === 0) return "Сегодня"
   if (index === 1) return "Завтра"
-  return weekdayFmt.format(d)
+  return weekdayFmt.format(labelDate(iso))
 }
 
 export function BookingFlow({
@@ -70,11 +79,14 @@ export function BookingFlow({
   reschedule?: { whenText: string; masterId: string | null }
   initialPhone?: string
 }) {
-  const days = React.useMemo(() => buildDays(DAY_COUNT), [])
+  const days = React.useMemo(() => {
+    const today = vendorTodayIso(vendor.timezone)
+    return Array.from({ length: DAY_COUNT }, (_, i) => addDaysIso(today, i))
+  }, [vendor.timezone])
   const hasMasters = vendor.masters.length > 0
 
   const [master, setMaster] = React.useState(reschedule?.masterId ?? "any")
-  const [date, setDate] = React.useState(() => isoDate(days[0]))
+  const [date, setDate] = React.useState(() => days[0])
   const [time, setTime] = React.useState<string | null>(null)
   const [phone, setPhone] = React.useState(initialPhone ?? "")
   const [slots, setSlots] = React.useState<string[]>([])
@@ -147,7 +159,7 @@ export function BookingFlow({
     }
     setError(null)
     const masterId = master === "any" ? null : master
-    const whenText = `${fullDateFmt.format(selectedDay)}, ${time}`
+    const whenText = `${fullDateFmt.format(labelDate(date))}, ${time}`
     const submit = () =>
       rescheduleId
         ? rescheduleBooking({ bookingId: rescheduleId, masterId, date, time, whenText, phone })
@@ -189,7 +201,6 @@ export function BookingFlow({
     })
   }
 
-  const selectedDay = days.find((d) => isoDate(d) === date) ?? days[0]
   const masterName =
     master === "any"
       ? "Любой мастер"
@@ -203,7 +214,7 @@ export function BookingFlow({
         {hasMasters ? <Row label="Мастер" value={masterName} /> : null}
         <Row
           label="Когда"
-          value={time ? `${fullDateFmt.format(selectedDay)}, ${time}` : "—"}
+          value={time ? `${fullDateFmt.format(labelDate(date))}, ${time}` : "—"}
         />
         <Row label="Длительность" value={formatDuration(service.durationMinutes)} />
         <div className="flex items-center justify-between border-t pt-2 font-medium">
@@ -298,17 +309,19 @@ export function BookingFlow({
           <ToggleGroup
             variant="outline"
             value={[date]}
-            onValueChange={(value) => setDate((value[0] as string) ?? isoDate(days[0]))}
+            onValueChange={(value) => setDate((value[0] as string) ?? days[0])}
             className="w-max"
           >
-            {days.map((d, i) => (
+            {days.map((iso, i) => (
               <ToggleGroupItem
-                key={isoDate(d)}
-                value={isoDate(d)}
+                key={iso}
+                value={iso}
                 className="h-auto flex-col gap-0.5 px-3 py-2"
               >
-                <span className="text-xs">{dayTopLabel(d, i)}</span>
-                <span className="text-sm font-medium">{dayMonthFmt.format(d)}</span>
+                <span className="text-xs">{dayTopLabel(iso, i)}</span>
+                <span className="text-sm font-medium">
+                  {dayMonthFmt.format(labelDate(iso))}
+                </span>
               </ToggleGroupItem>
             ))}
           </ToggleGroup>
