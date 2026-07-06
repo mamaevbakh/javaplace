@@ -200,7 +200,7 @@ function ServiceForm({
             </Field>
             <div className="flex gap-3">
               <Field className="flex-1">
-                <FieldLabel htmlFor="s-price">Цена, ₽</FieldLabel>
+                <FieldLabel htmlFor="s-price">Цена, сум</FieldLabel>
                 <Input
                   id="s-price"
                   value={price}

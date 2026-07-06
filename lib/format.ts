@@ -1,8 +1,10 @@
 /** Formatting helpers for money, duration, and working hours (ru-RU). */
 
+// Prices are stored as integer minor units (value × 100). Uzbek som (сум) has no
+// practical minor unit, so we divide back out and label in сум.
 export function formatPrice(minorUnits: number | null): string | null {
   if (minorUnits == null) return null
-  return `${Math.round(minorUnits / 100).toLocaleString("ru-RU")} ₽`
+  return `${Math.round(minorUnits / 100).toLocaleString("ru-RU")} сум`
 }
 
 export function formatPriceFrom(minorUnits: number | null): string | null {
