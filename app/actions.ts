@@ -69,6 +69,47 @@ export async function getAvailableSlots(input: AvailableSlotsInput): Promise<str
   })
 }
 
+/**
+ * The nearest date (YYYY-MM-DD, vendor-local) at/after `fromDate` with at least
+ * one bookable slot, within a 14-day horizon (null if the fortnight is full).
+ * Fetches the window's booked ranges once, then checks days in memory.
+ */
+export async function getNextAvailableDate(input: {
+  vendorId: string
+  serviceId: string
+  masterId: string | null
+  fromDate: string // YYYY-MM-DD (vendor-local), search starts here
+  excludeBookingId?: string
+}): Promise<string | null> {
+  const ctx = await getServiceBookingContext(input.vendorId, input.serviceId)
+  if (!ctx) return null
+
+  const tz = ctx.vendor.timezone
+  const HORIZON = 14
+  const addDays = (iso: string, n: number) => {
+    const [y, m, d] = iso.split("-").map(Number)
+    return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10)
+  }
+  const from = zonedTimeToUtc(input.fromDate, "00:00", tz)
+  const to = zonedTimeToUtc(addDays(input.fromDate, HORIZON), "00:00", tz)
+  const booked = await getVendorBookedRanges(input.vendorId, from, to, input.excludeBookingId)
+
+  for (let i = 0; i < HORIZON; i++) {
+    const dateStr = addDays(input.fromDate, i)
+    const slots = computeAvailableSlots({
+      dateStr,
+      timezone: tz,
+      hours: ctx.vendor.workingHours,
+      durationMinutes: ctx.service.durationMinutes,
+      booked,
+      masterId: input.masterId,
+      masterCount: ctx.vendor.masters.length,
+    })
+    if (slots.length > 0) return dateStr
+  }
+  return null
+}
+
 // ---------------------------------------------------------------------------
 // Booking
 // ---------------------------------------------------------------------------
@@ -79,6 +120,7 @@ export type CreateBookingInput = {
   date: string // YYYY-MM-DD (vendor-local)
   time: string // HH:MM (vendor-local wall clock)
   phone: string // client contact — the partner needs it to reach the client
+  comment?: string // optional free-text note to the salon
   whenText?: string // human-readable date/time for the confirmation message
 }
 
@@ -227,10 +269,13 @@ export async function createBooking(
       price: service.price,
       currency: service.currency,
       phone,
+      comment: input.comment?.trim() || null,
       status: "pending",
     },
   })
   if (result === "taken") return { ok: false, error: "slot_taken" }
+
+  const comment = input.comment?.trim()
 
   // Remember the phone on the profile so repeat bookings pre-fill it.
   if (phone !== user.phone) {
@@ -279,9 +324,12 @@ export async function createBooking(
         `🗓 ${formatDateTimeInTz(startsAt, vendor.timezone)}`,
         `👤 ${clientLabel(user)}`,
         `📞 ${phone}`,
+        comment ? `💬 ${comment}` : null,
         "",
         `Подтвердите: ${portal}`,
-      ].join("\n"),
+      ]
+        .filter(Boolean)
+        .join("\n"),
     )
   }
 

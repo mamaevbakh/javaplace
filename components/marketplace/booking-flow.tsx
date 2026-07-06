@@ -10,12 +10,14 @@ import {
   authenticate,
   createBooking,
   getAvailableSlots,
+  getNextAvailableDate,
   rescheduleBooking,
 } from "@/app/actions"
 import { getInitData } from "@/components/telegram-init"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
 import {
   Empty,
   EmptyDescription,
@@ -66,6 +68,13 @@ function dayTopLabel(iso: string, index: number): string {
   return weekdayFmt.format(labelDate(iso))
 }
 
+// Group the time grid by daypart so a long list is faster to scan ("сначала утро").
+const TIME_GROUPS: { label: string; test: (hour: number) => boolean }[] = [
+  { label: "Утро", test: (h) => h < 12 },
+  { label: "День", test: (h) => h >= 12 && h < 17 },
+  { label: "Вечер", test: (h) => h >= 17 },
+]
+
 export function BookingFlow({
   vendor,
   service,
@@ -89,9 +98,11 @@ export function BookingFlow({
   const [date, setDate] = React.useState(() => days[0])
   const [time, setTime] = React.useState<string | null>(null)
   const [phone, setPhone] = React.useState(initialPhone ?? "")
+  const [comment, setComment] = React.useState("")
   const [slots, setSlots] = React.useState<string[]>([])
   const [slotsLoading, setSlotsLoading] = React.useState(true)
   const [slotsError, setSlotsError] = React.useState(false)
+  const [findingDate, setFindingDate] = React.useState(false)
   const [pending, startTransition] = React.useTransition()
   const [error, setError] = React.useState<string | null>(null)
   const [bookingRef, setBookingRef] = React.useState<{
@@ -151,6 +162,27 @@ export function BookingFlow({
     })
   }
 
+  // Empty-day escape hatch: find (and jump to) the next day with any free slot,
+  // so a booked-out day is never a dead end.
+  function jumpToNextAvailable() {
+    if (findingDate) return
+    setFindingDate(true)
+    const masterId = master === "any" ? null : master
+    getNextAvailableDate({
+      vendorId: vendor.id,
+      serviceId: service.id,
+      masterId,
+      fromDate: addDaysIso(date, 1),
+      excludeBookingId: rescheduleId,
+    })
+      .then((next) => {
+        if (next) setDate(next)
+        else setError("Свободных мест пока нет — попробуйте позже.")
+      })
+      .catch(() => setError("Не удалось найти свободную дату."))
+      .finally(() => setFindingDate(false))
+  }
+
   function confirm() {
     if (!time || pending) return
     if (!phone.trim()) {
@@ -171,6 +203,7 @@ export function BookingFlow({
             time,
             whenText,
             phone,
+            comment,
           })
 
     startTransition(async () => {
@@ -235,11 +268,14 @@ export function BookingFlow({
             </EmptyMedia>
             <EmptyTitle>{rescheduleId ? "Запись перенесена!" : "Вы записаны!"}</EmptyTitle>
             <EmptyDescription>
-              {rescheduleId ? "Новое время сохранено" : "Заявка отправлена партнёру"}. Номер брони{" "}
+              {rescheduleId
+                ? "Новое время отправлено на подтверждение"
+                : "Заявка отправлена — салон подтвердит запись"}
+              . Номер брони{" "}
               <span className="font-medium text-foreground">
                 #{bookingRef.id.slice(0, 8).toUpperCase()}
               </span>
-              . Уведомления придут в Telegram.
+              . Уведомление придёт в Telegram.
             </EmptyDescription>
           </EmptyHeader>
         </Empty>
@@ -340,22 +376,46 @@ export function BookingFlow({
             </Button>
           </div>
         ) : slots.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            В этот день нет свободного времени.
-          </p>
+          <div className="flex flex-col items-start gap-2 rounded-lg border border-dashed p-4">
+            <p className="text-sm text-muted-foreground">
+              В этот день всё занято.
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              type="button"
+              onClick={jumpToNextAvailable}
+              disabled={findingDate}
+            >
+              {findingDate ? "Ищем…" : "Ближайшая свободная дата →"}
+            </Button>
+          </div>
         ) : (
-          <ToggleGroup
-            variant="outline"
-            value={time ? [time] : []}
-            onValueChange={(value) => setTime((value[0] as string) ?? null)}
-            className="flex-wrap justify-start"
-          >
-            {slots.map((slot) => (
-              <ToggleGroupItem key={slot} value={slot} className="w-16">
-                {slot}
-              </ToggleGroupItem>
-            ))}
-          </ToggleGroup>
+          <div className="flex flex-col gap-3">
+            {TIME_GROUPS.map((group) => {
+              const groupSlots = slots.filter((s) =>
+                group.test(Number(s.slice(0, 2))),
+              )
+              if (groupSlots.length === 0) return null
+              return (
+                <div key={group.label} className="flex flex-col gap-1.5">
+                  <span className="text-xs text-muted-foreground">{group.label}</span>
+                  <ToggleGroup
+                    variant="outline"
+                    value={time ? [time] : []}
+                    onValueChange={(value) => setTime((value[0] as string) ?? null)}
+                    className="flex-wrap justify-start"
+                  >
+                    {groupSlots.map((slot) => (
+                      <ToggleGroupItem key={slot} value={slot} className="w-16">
+                        {slot}
+                      </ToggleGroupItem>
+                    ))}
+                  </ToggleGroup>
+                </div>
+              )
+            })}
+          </div>
         )}
       </section>
 
@@ -376,6 +436,22 @@ export function BookingFlow({
           ) : null}
         </div>
       </section>
+
+      {!rescheduleId ? (
+        <section className="flex flex-col gap-2">
+          <h2 className="text-sm font-medium">
+            Комментарий{" "}
+            <span className="font-normal text-muted-foreground">— необязательно</span>
+          </h2>
+          <Textarea
+            value={comment}
+            onChange={(e) => setComment(e.target.value)}
+            placeholder="Пожелания, аллергии, как вас найти…"
+            rows={2}
+            maxLength={500}
+          />
+        </section>
+      ) : null}
 
       {summary}
 
@@ -398,6 +474,11 @@ export function BookingFlow({
                   ? "Укажите телефон"
                   : "Записаться"}
           </Button>
+          {time && phone.trim() && !error ? (
+            <p className="mt-2 text-center text-xs text-muted-foreground">
+              Салон подтвердит запись — уведомление придёт в Telegram
+            </p>
+          ) : null}
         </div>
       </div>
     </main>
