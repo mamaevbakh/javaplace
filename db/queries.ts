@@ -56,7 +56,8 @@ export async function getVendorById(id: string) {
   cacheLife("hours");
   cacheTag("vendors");
   return db.query.vendors.findFirst({
-    where: (v, { eq, and }) => and(eq(v.id, id), ownerApproved(v.merchantId)),
+    where: (v, { eq, and }) =>
+      and(eq(v.id, id), eq(v.isActive, true), ownerApproved(v.merchantId)),
     with: {
       category: true,
       workingHours: true,
@@ -72,7 +73,8 @@ export async function getVendorById(id: string) {
 /** Everything the booking screen needs: the vendor (+ masters, hours) and one service. */
 export async function getServiceBookingContext(vendorId: string, serviceId: string) {
   const vendor = await db.query.vendors.findFirst({
-    where: (v, { eq, and }) => and(eq(v.id, vendorId), ownerApproved(v.merchantId)),
+    where: (v, { eq, and }) =>
+      and(eq(v.id, vendorId), eq(v.isActive, true), ownerApproved(v.merchantId)),
     with: {
       category: true,
       workingHours: true,

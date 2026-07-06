@@ -266,53 +266,91 @@ export async function createBooking(
     }
 
     // Notify the owning merchant if they've connected Telegram alerts.
-    if (vendor.merchantId) {
-      try {
-        const merchant = await db.query.merchants.findFirst({
-          where: (m, { eq }) => eq(m.id, vendor.merchantId!),
-          columns: { telegramChatId: true },
-        })
-        if (merchant?.telegramChatId) {
-          const clientName =
-            [user.firstName, user.lastName].filter(Boolean).join(" ").trim() ||
-            (user.username ? `@${user.username}` : "Клиент")
-          const portal = process.env.APP_URL
-            ? `${process.env.APP_URL}/partner/bookings`
-            : "портале партнёра"
-          const text = [
-            "🔔 <b>Новая заявка!</b>",
-            "",
-            `<b>${service.name}</b>`,
-            `🏬 ${vendor.name}`,
-            `🗓 ${formatDateTimeInTz(startsAt, vendor.timezone)}`,
-            `👤 ${clientName}`,
-            `📞 ${phone}`,
-            "",
-            `Подтвердите: ${portal}`,
-          ].join("\n")
-          await sendMessage(merchant.telegramChatId, text)
-        }
-      } catch (error) {
-        console.error("[booking] merchant notify failed:", error)
-      }
-    }
+    const portal = process.env.APP_URL
+      ? `${process.env.APP_URL}/partner/bookings`
+      : "портале партнёра"
+    await notifyMerchant(
+      vendor.merchantId,
+      [
+        "🔔 <b>Новая заявка!</b>",
+        "",
+        `<b>${service.name}</b>`,
+        `🏬 ${vendor.name}`,
+        `🗓 ${formatDateTimeInTz(startsAt, vendor.timezone)}`,
+        `👤 ${clientLabel(user)}`,
+        `📞 ${phone}`,
+        "",
+        `Подтвердите: ${portal}`,
+      ].join("\n"),
+    )
   }
 
   return { ok: true, bookingId: result.id, status: result.status }
 }
 
-/** Cancels a booking owned by the current user. */
+/** Best-effort Telegram ping to a vendor's owning merchant (if they've connected). */
+async function notifyMerchant(
+  merchantId: string | null | undefined,
+  text: string,
+): Promise<void> {
+  if (!merchantId || !isBotConfigured()) return
+  try {
+    const merchant = await db.query.merchants.findFirst({
+      where: (m, { eq }) => eq(m.id, merchantId),
+      columns: { telegramChatId: true },
+    })
+    if (merchant?.telegramChatId) await sendMessage(merchant.telegramChatId, text)
+  } catch (error) {
+    console.error("[notify merchant] failed:", error)
+  }
+}
+
+/** "Имя Фамилия", else "@username", else "Клиент". */
+function clientLabel(u: {
+  firstName: string | null
+  lastName: string | null
+  username: string | null
+}): string {
+  return (
+    [u.firstName, u.lastName].filter(Boolean).join(" ").trim() ||
+    (u.username ? `@${u.username}` : "Клиент")
+  )
+}
+
+/** Cancels a booking owned by the current user, and tells the merchant. */
 export async function cancelBooking(bookingId: string): Promise<{ ok: boolean }> {
   const user = await getCurrentUser()
   if (!user) return { ok: false }
 
-  const [updated] = await db
+  const booking = await db.query.bookings.findFirst({
+    where: (b, { eq, and }) => and(eq(b.id, bookingId), eq(b.userId, user.id)),
+    with: {
+      vendor: { columns: { merchantId: true, name: true, timezone: true } },
+      service: { columns: { name: true } },
+    },
+  })
+  if (!booking) return { ok: false }
+  if (booking.status === "cancelled") return { ok: true } // idempotent
+
+  await db
     .update(bookings)
     .set({ status: "cancelled", updatedAt: new Date() })
     .where(and(eq(bookings.id, bookingId), eq(bookings.userId, user.id)))
-    .returning({ id: bookings.id })
 
-  return { ok: Boolean(updated) }
+  // The slot just freed up — the merchant needs to know.
+  await notifyMerchant(
+    booking.vendor.merchantId,
+    [
+      "❌ <b>Клиент отменил запись</b>",
+      "",
+      `<b>${booking.service.name}</b>`,
+      `🏬 ${booking.vendor.name}`,
+      `🗓 ${formatDateTimeInTz(booking.startsAt, booking.vendor.timezone)}`,
+      `👤 ${clientLabel(user)}`,
+    ].join("\n"),
+  )
+
+  return { ok: true }
 }
 
 export type RescheduleInput = {
@@ -333,9 +371,13 @@ export async function rescheduleBooking(
 
   const booking = await db.query.bookings.findFirst({
     where: (b, { eq, and }) => and(eq(b.id, input.bookingId), eq(b.userId, user.id)),
-    with: { service: true, vendor: { columns: { timezone: true } } },
+    with: {
+      service: true,
+      vendor: { columns: { timezone: true, merchantId: true, name: true } },
+    },
   })
   if (!booking) return { ok: false, error: "unknown" }
+  const oldStartsAt = booking.startsAt // captured before the update below
 
   const tz = booking.vendor.timezone
   const startsAt = zonedTimeToUtc(input.date, input.time, tz)
@@ -389,7 +431,24 @@ export async function rescheduleBooking(
         },
         { isolationLevel: "serializable" },
       )
-      if (outcome === "ok") return { ok: true, bookingId: booking.id, status: "pending" }
+      if (outcome === "ok") {
+        // Moving to a new time reverts to pending — the merchant must re-confirm.
+        await notifyMerchant(
+          booking.vendor.merchantId,
+          [
+            "🔄 <b>Клиент перенёс запись</b>",
+            "",
+            `<b>${booking.service.name}</b>`,
+            `🏬 ${booking.vendor.name}`,
+            `🗓 Было: ${formatDateTimeInTz(oldStartsAt, tz)}`,
+            `🗓 Стало: ${formatDateTimeInTz(startsAt, tz)}`,
+            `👤 ${clientLabel(user)}`,
+            "",
+            "Нужно повторное подтверждение.",
+          ].join("\n"),
+        )
+        return { ok: true, bookingId: booking.id, status: "pending" }
+      }
     } catch (e) {
       if (e instanceof SlotTakenError) return { ok: false, error: "slot_taken" }
       if (isSerializationError(e) && attempt === 0) continue
