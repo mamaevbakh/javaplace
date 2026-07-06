@@ -118,6 +118,15 @@ export async function getVendorBookedRanges(
     );
 }
 
+/** One of a user's bookings (for the reschedule screen): its old time + master. */
+export async function getUserBooking(bookingId: string, userId: string) {
+  return db.query.bookings.findFirst({
+    where: (b, { eq, and }) => and(eq(b.id, bookingId), eq(b.userId, userId)),
+    columns: { id: true, startsAt: true, masterId: true },
+    with: { vendor: { columns: { timezone: true } } },
+  });
+}
+
 /** A user's bookings with vendor/service/master, newest first. */
 export async function getUserBookings(userId: string) {
   return db.query.bookings.findMany({

@@ -61,22 +61,25 @@ export function BookingFlow({
   vendor,
   service,
   rescheduleId,
+  reschedule,
   initialPhone,
 }: {
   vendor: BookingContext["vendor"]
   service: BookingContext["service"]
   rescheduleId?: string
+  reschedule?: { whenText: string; masterId: string | null }
   initialPhone?: string
 }) {
   const days = React.useMemo(() => buildDays(DAY_COUNT), [])
   const hasMasters = vendor.masters.length > 0
 
-  const [master, setMaster] = React.useState("any")
+  const [master, setMaster] = React.useState(reschedule?.masterId ?? "any")
   const [date, setDate] = React.useState(() => isoDate(days[0]))
   const [time, setTime] = React.useState<string | null>(null)
   const [phone, setPhone] = React.useState(initialPhone ?? "")
   const [slots, setSlots] = React.useState<string[]>([])
   const [slotsLoading, setSlotsLoading] = React.useState(true)
+  const [slotsError, setSlotsError] = React.useState(false)
   const [pending, startTransition] = React.useTransition()
   const [error, setError] = React.useState<string | null>(null)
   const [bookingRef, setBookingRef] = React.useState<{
@@ -89,6 +92,7 @@ export function BookingFlow({
   const loadSlots = React.useCallback(() => {
     let active = true
     setSlotsLoading(true)
+    setSlotsError(false)
     const masterId = master === "any" ? null : master
     getAvailableSlots({
       vendorId: vendor.id,
@@ -103,7 +107,11 @@ export function BookingFlow({
         // Drop a held time if it's no longer offered for the new date/master.
         setTime((cur) => (cur && result.includes(cur) ? cur : null))
       })
-      .catch(() => active && setSlots([]))
+      .catch(() => {
+        if (!active) return
+        setSlots([])
+        setSlotsError(true) // distinguish a failed load from a genuinely full day
+      })
       .finally(() => active && setSlotsLoading(false))
     return () => {
       active = false
@@ -225,9 +233,14 @@ export function BookingFlow({
           </EmptyHeader>
         </Empty>
         {summary}
-        <Button variant="outline" nativeButton={false} render={<Link href="/" />}>
-          На главную
-        </Button>
+        <div className="flex flex-col gap-2">
+          <Button nativeButton={false} render={<Link href="/bookings" />}>
+            Мои записи
+          </Button>
+          <Button variant="outline" nativeButton={false} render={<Link href="/" />}>
+            На главную
+          </Button>
+        </div>
       </main>
     )
   }
@@ -250,6 +263,13 @@ export function BookingFlow({
           <p className="truncate text-sm text-muted-foreground">{vendor.name}</p>
         </div>
       </div>
+
+      {reschedule ? (
+        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-400">
+          Переносим запись с <span className="font-medium">{reschedule.whenText}</span>.
+          Выберите новое время{hasMasters ? " и мастера" : ""}.
+        </div>
+      ) : null}
 
       {hasMasters ? (
         <section className="flex flex-col gap-2">
@@ -299,6 +319,13 @@ export function BookingFlow({
         <h2 className="text-sm font-medium">Время</h2>
         {slotsLoading ? (
           <p className="text-sm text-muted-foreground">Загружаем свободное время…</p>
+        ) : slotsError ? (
+          <div className="flex items-center gap-3">
+            <p className="text-sm text-destructive">Не удалось загрузить время.</p>
+            <Button variant="outline" size="sm" type="button" onClick={loadSlots}>
+              Повторить
+            </Button>
+          </div>
         ) : slots.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             В этот день нет свободного времени.
