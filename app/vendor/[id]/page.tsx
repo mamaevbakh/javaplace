@@ -161,7 +161,10 @@ async function VendorContent({ params }: { params: Promise<{ id: string }> }) {
             href={`/vendor/${vendor.id}/book/${service.id}`}
             className="block"
           >
-            <Card size="sm" className="transition-shadow hover:ring-foreground/20">
+            <Card
+              size="sm"
+              className="transition-colors hover:ring-foreground/20 active:bg-muted"
+            >
               <div className="flex items-center justify-between gap-3 px-(--card-spacing)">
                 <div className="flex min-w-0 flex-col gap-1">
                   <span className="font-medium">{service.name}</span>
@@ -171,8 +174,10 @@ async function VendorContent({ params }: { params: Promise<{ id: string }> }) {
                   </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-1">
-                  <span className="font-medium">{formatPrice(service.price)}</span>
-                  <ChevronRight className="size-4 text-muted-foreground" />
+                  <span className="text-base font-semibold">
+                    {formatPrice(service.price)}
+                  </span>
+                  <ChevronRight className="size-5 text-muted-foreground" />
                 </div>
               </div>
             </Card>

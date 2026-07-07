@@ -98,9 +98,14 @@ function BookingCard({ booking, active }: { booking: BookingItem; active: boolea
             {formatDateTimeInTz(new Date(booking.startsAt), booking.vendor.timezone)}
           </span>
         </div>
-        <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
-          <MapPin className="size-3.5 shrink-0" />
-          <span className="truncate">{booking.vendor.name}</span>
+        <div className="flex items-start gap-1.5 text-sm text-muted-foreground">
+          <MapPin className="mt-0.5 size-3.5 shrink-0" />
+          <div className="flex min-w-0 flex-col">
+            <span className="truncate text-foreground">{booking.vendor.name}</span>
+            {booking.vendor.address ? (
+              <span className="truncate">{booking.vendor.address}</span>
+            ) : null}
+          </div>
         </div>
         <div className="flex items-center justify-between gap-2">
           <span className="text-xs text-muted-foreground">
