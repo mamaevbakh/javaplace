@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/empty"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { Skeleton } from "@/components/ui/skeleton"
+import { CopyCode } from "./copy-code"
 
 const DAY_COUNT = 14
 
@@ -287,12 +288,12 @@ export function BookingFlow({
               {rescheduleId
                 ? "Новое время отправлено на подтверждение"
                 : "Заявка отправлена — салон подтвердит запись"}
-              . Номер брони{" "}
-              <span className="font-medium text-foreground">
-                #{bookingRef.id.slice(0, 8).toUpperCase()}
-              </span>
               . Уведомление придёт в Telegram.
             </EmptyDescription>
+            <div className="mt-1 flex items-center gap-2 text-sm text-muted-foreground">
+              <span>Номер брони</span>
+              <CopyCode id={bookingRef.id} />
+            </div>
           </EmptyHeader>
         </Empty>
         {summary}

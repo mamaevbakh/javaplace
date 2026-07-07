@@ -93,15 +93,39 @@ export function Home({
             </EmptyDescription>
           </EmptyHeader>
           {query || activeCategory !== "all" ? (
-            <Button
-              variant="outline"
-              onClick={() => {
-                setQuery("")
-                setActiveCategory("all")
-              }}
-            >
-              Сбросить фильтры
-            </Button>
+            <div className="flex flex-col items-center gap-3">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setQuery("")
+                  setActiveCategory("all")
+                }}
+              >
+                Сбросить фильтры
+              </Button>
+              {categories.length > 0 ? (
+                <div className="flex flex-col items-center gap-2">
+                  <span className="text-xs text-muted-foreground">
+                    Популярные категории
+                  </span>
+                  <div className="flex flex-wrap justify-center gap-2">
+                    {categories.slice(0, 4).map((category) => (
+                      <Button
+                        key={category.id}
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => {
+                          setQuery("")
+                          setActiveCategory(category.slug)
+                        }}
+                      >
+                        {category.icon} {category.name}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+            </div>
           ) : null}
         </Empty>
       ) : (

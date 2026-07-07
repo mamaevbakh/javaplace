@@ -3,14 +3,16 @@
 import * as React from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { CalendarClock, MapPin, RefreshCw } from "lucide-react"
+import { CalendarClock, Loader2, MapPin, RefreshCw } from "lucide-react"
 
 import type { BookingItem } from "@/db/queries"
 import { cancelBooking } from "@/app/actions"
 import { formatDateTimeInTz, formatPrice } from "@/lib/format"
+import { hapticNotify } from "@/lib/haptics"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
+import { CopyCode } from "./copy-code"
 
 type BadgeVariant = "default" | "secondary" | "outline" | "destructive"
 
@@ -77,9 +79,11 @@ function BookingCard({ booking, active }: { booking: BookingItem; active: boolea
     startTransition(async () => {
       const res = await cancelBooking(booking.id)
       if (res.ok) {
+        hapticNotify("warning")
         setConfirming(false)
         router.refresh()
       } else {
+        hapticNotify("error")
         setCancelError(true)
       }
     })
@@ -108,32 +112,43 @@ function BookingCard({ booking, active }: { booking: BookingItem; active: boolea
           </div>
         </div>
         <div className="flex items-center justify-between gap-2">
-          <span className="text-xs text-muted-foreground">
-            #{booking.id.slice(0, 8).toUpperCase()}
-          </span>
+          <CopyCode id={booking.id} />
           <span className="text-sm font-medium">{formatPrice(booking.price)}</span>
         </div>
 
         {active ? (
           confirming ? (
-            <div className="flex flex-col gap-1 border-t pt-2">
-              <div className="flex items-center gap-2">
-                <span className="text-sm">Отменить запись?</span>
+            <div className="flex flex-col gap-2 border-t pt-2">
+              <span className="text-sm">Отменить запись?</span>
+              <div className="flex gap-2">
                 <Button
                   variant="destructive"
                   size="sm"
+                  className="flex-1"
                   disabled={pending}
                   onClick={cancel}
-                  className="ml-auto"
                 >
-                  Да, отменить
+                  {pending ? (
+                    <>
+                      <Loader2 className="animate-spin" data-icon="inline-start" />
+                      Отмена…
+                    </>
+                  ) : (
+                    "Да, отменить"
+                  )}
                 </Button>
-                <Button variant="ghost" size="sm" onClick={() => setConfirming(false)}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="flex-1"
+                  disabled={pending}
+                  onClick={() => setConfirming(false)}
+                >
                   Нет
                 </Button>
               </div>
               {cancelError ? (
-                <span className="text-xs text-destructive">
+                <span className="text-sm text-destructive">
                   Не удалось отменить. Попробуйте ещё раз.
                 </span>
               ) : null}
